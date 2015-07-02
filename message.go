@@ -1,13 +1,18 @@
 package onehop
 
-import (
-	"net"
-)
-
+// Message Type
 const (
 	_ = iota // 0x0 skipped
-	FIND_VALUE
-	ALIVE
+	BOOTSTRAP
+	KEEP_ALIVE
+	EVENT_NOTIFICATION
+	MESSAGE_EXCHANGE
+)
+
+// Event
+const (
+	_ byte = iota
+	JOIN
 	LEAVE
 )
 
@@ -16,17 +21,8 @@ type MessageHeader struct {
 	Type    byte
 }
 
-type RecordID [16]byte
-
-type Record struct {
-	ID     RecordID
-	Status byte
-	IP     net.IP
-	Port   uint16
-}
-
 type KeepAliveMessage struct {
 	Hdr         MessageHeader
 	RecordCount uint8
-	Records     []Record
+	Records     []Node
 }
