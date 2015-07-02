@@ -23,6 +23,15 @@ func NewIDFromString(s string) (id RecordID) {
 	return
 }
 
+func NewFullRecordID() (id RecordID) {
+
+	for i := 0; i < ID_SIZE; i++ {
+		id[i] = 0xff
+	}
+	return
+
+}
+
 func (r *RecordID) Less(cmp RecordID) bool {
 
 	for i, v := range r {
