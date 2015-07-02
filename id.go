@@ -23,6 +23,14 @@ func NewIDFromString(s string) (id RecordID) {
 	return
 }
 
+func NewIDFromBytes(b []byte) (id RecordID) {
+
+	for i := 0; i < ID_SIZE; i++ {
+		id[i] = b[i]
+	}
+	return
+}
+
 func NewFullRecordID() (id RecordID) {
 
 	for i := 0; i < ID_SIZE; i++ {
