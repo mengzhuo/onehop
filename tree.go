@@ -28,14 +28,14 @@ func (u *Unit) SplitBy(newNode *Node) (left *Unit) {
 		n := u.NodeList[0]
 		u.NodeList = u.NodeList[1:]
 
-		if n.ID.Less(newNode.ID) {
+		if n.ID.Cmp(newNode.ID) < 0 {
 			left.NodeList = append(left.NodeList, n)
 		} else {
 			right_list = append(right_list, n)
 		}
 	}
 
-	if newNode.ID.Less(mid_point) {
+	if newNode.ID.Cmp(mid_point) > 0 {
 		left.NodeList = append(left.NodeList, newNode)
 	} else {
 		u.NodeList = append(u.NodeList, newNode)
