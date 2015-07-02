@@ -1,6 +1,6 @@
 package onehop
 
-type Tree struct {
+type Unit struct {
 	Min   RecordID
 	Max   RecordID
 	Limit int
@@ -8,25 +8,25 @@ type Tree struct {
 	NodeList []*Node
 }
 
-func (t *Tree) SplitBy(newNode *Node) (left *Tree) {
+func (u *Unit) SplitBy(newNode *Node) (left *Unit) {
 
-	left = &Tree{Limit: t.Limit}
+	left = &Unit{Limit: u.Limit}
 
-	mid_point := t.Max
+	mid_point := u.Max
 	mid_point.RShift()
 
-	left.Min = t.Min
+	left.Min = u.Min
 	left.Max = mid_point
 
-	t.Min = mid_point
+	u.Min = mid_point
 
 	right_list := make([]*Node, 0)
-	length := len(t.NodeList)
+	length := len(u.NodeList)
 
 	for i := 0; i < length; i++ {
 
-		n := t.NodeList[0]
-		t.NodeList = t.NodeList[1:]
+		n := u.NodeList[0]
+		u.NodeList = u.NodeList[1:]
 
 		if n.ID.Less(newNode.ID) {
 			left.NodeList = append(left.NodeList, n)
@@ -38,10 +38,10 @@ func (t *Tree) SplitBy(newNode *Node) (left *Tree) {
 	if newNode.ID.Less(mid_point) {
 		left.NodeList = append(left.NodeList, newNode)
 	} else {
-		t.NodeList = append(t.NodeList, newNode)
+		u.NodeList = append(u.NodeList, newNode)
 	}
 
-	t.NodeList = right_list
+	u.NodeList = right_list
 
 	return
 }

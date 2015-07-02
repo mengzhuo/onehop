@@ -1,6 +1,7 @@
 package onehop
 
 import (
+	"bytes"
 	"crypto/rand"
 )
 
@@ -40,27 +41,12 @@ func NewFullRecordID() (id RecordID) {
 
 }
 
-func (r *RecordID) Less(cmp RecordID) bool {
-
-	for i, v := range r {
-		if v > cmp[i] {
-			return false
-		}
-	}
-	return true
-
+func (r *RecordID) Cmp(cmp RecordID) int {
+	return bytes.Compare(r[:], cmp[:])
 }
 
 func (r *RecordID) Equal(cmp RecordID) bool {
-
-	for i, v := range r {
-
-		if v != cmp[i] {
-			return false
-		}
-	}
-	return true
-
+	return bytes.Equal(r[:], cmp[:])
 }
 
 func (id *RecordID) RShift() {
