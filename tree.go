@@ -1,47 +1,26 @@
 package onehop
 
-type Unit struct {
-	Min   RecordID
-	Max   RecordID
-	Limit int
+import (
+	"math/big"
+)
 
-	NodeList []*Node
+type Slice struct {
+	Leader *Node
+	Min    *big.Int
+	Max    *big.Int
+	units  []*Unit
 }
 
-func (u *Unit) SplitBy(newNode *Node) (left *Unit) {
+func NewUnit(min, max *big.Int) *Unit {
 
-	left = &Unit{Limit: u.Limit}
+	l := make([]*Node, 0)
+	return &Unit{Min: min, Max: max, NodeList: l}
+}
 
-	mid_point := u.Max
-	mid_point.RShift()
+type Unit struct {
+	Leader *Node
+	Min    *big.Int
+	Max    *big.Int
 
-	left.Min = u.Min
-	left.Max = mid_point
-
-	u.Min = mid_point
-
-	right_list := make([]*Node, 0)
-	length := len(u.NodeList)
-
-	for i := 0; i < length; i++ {
-
-		n := u.NodeList[0]
-		u.NodeList = u.NodeList[1:]
-
-		if n.ID.Cmp(newNode.ID) < 0 {
-			left.NodeList = append(left.NodeList, n)
-		} else {
-			right_list = append(right_list, n)
-		}
-	}
-
-	if newNode.ID.Cmp(mid_point) > 0 {
-		left.NodeList = append(left.NodeList, newNode)
-	} else {
-		u.NodeList = append(u.NodeList, newNode)
-	}
-
-	u.NodeList = right_list
-
-	return
+	NodeList []*Node
 }

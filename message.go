@@ -24,5 +24,5 @@ type MessageHeader struct {
 type KeepAliveMessage struct {
 	Hdr         MessageHeader
 	RecordCount uint8
-	Records     []Node
+	Records     []RemoteNode
 }

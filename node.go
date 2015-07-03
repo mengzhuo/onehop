@@ -2,6 +2,7 @@
 package onehop
 
 import (
+	"math/big"
 	"net"
 )
 
@@ -13,13 +14,31 @@ const (
 	SLICE_LEADER
 )
 
-type Node struct {
+const (
+	ID_SIZE int = 16
+)
+
+type RecordID [ID_SIZE]byte
+
+type RemoteNode struct {
 	ID   RecordID
 	Type byte
 	IP   [4]byte
 	Port uint16
 }
 
-func (n *Node) GetIP() net.IP {
-	return net.IPv4(n.IP[0], n.IP[1], n.IP[2], n.IP[3])
+func (self *RemoteNode) RemoteToNode() *Node {
+
+	id := new(big.Int)
+	id.SetBytes(self.ID[:])
+	ip := net.IPv4(self.IP[0], self.IP[1], self.IP[2], self.IP[3])
+	return &Node{id, self.Type, ip, self.Port}
+
+}
+
+type Node struct {
+	ID   *big.Int
+	Type byte
+	IP   net.IP
+	Port uint16
 }
