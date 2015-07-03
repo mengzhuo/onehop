@@ -24,6 +24,9 @@ func NewRoute(k int, u int) *Route {
 	block := new(big.Int)
 	block.Div(b, big.NewInt(int64(k)))
 
+	ublock := new(big.Int)
+	ublock.Div(block, big.NewInt(int64(u)))
+
 	l := list.New()
 
 	for i := int64(0); i < int64(k); i++ {
@@ -35,13 +38,9 @@ func NewRoute(k int, u int) *Route {
 		slice.Max = new(big.Int)
 		slice.Max.Mul(block, big.NewInt(i+1))
 
-		ublock := new(big.Int)
-		ublock.Sub(slice.Max, slice.Min)
-		ublock.Div(ublock, big.NewInt(int64(k)))
+		for j := int64(0); j < int64(u); j++ {
 
-		for j := int64(1); j < int64(u); j++ {
-			umin := big.NewInt(0)
-			umin.Add(umin, ublock)
+			umin.Add(slice.Min)
 			umin.Mul(umin, big.NewInt(j))
 
 			umax := new(big.Int)
