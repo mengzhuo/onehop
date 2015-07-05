@@ -3,6 +3,7 @@ package onehop
 
 import (
 	"container/list"
+	_ "fmt"
 	"math/big"
 )
 
@@ -18,37 +19,44 @@ func NewRoute(k int, u int) *Route {
 		0xff, 0xff, 0xff, 0xff,
 		0xff, 0xff, 0xff, 0xff}
 
-	b := new(big.Int)
-	b.SetBytes(fullByte)
-
 	block := new(big.Int)
-	block.Div(b, big.NewInt(int64(k)))
+	block.SetBytes(fullByte)
+	block.Div(block, big.NewInt(int64(k*u)))
+	// TODO wired length issues on divied number
+	block.Add(block, big.NewInt(1))
 
-	ublock := new(big.Int)
-	ublock.Div(block, big.NewInt(int64(u)))
+	max_num := new(big.Int)
+	max_num.SetBytes(fullByte)
 
 	l := list.New()
 
 	for i := int64(0); i < int64(k); i++ {
-
 		slice := new(Slice)
-		slice.Min = new(big.Int)
-		slice.Min.Mul(block, big.NewInt(i))
-
 		slice.Max = new(big.Int)
-		slice.Max.Mul(block, big.NewInt(i+1))
-
-		for j := int64(0); j < int64(u); j++ {
-
-			umin.Add(slice.Min)
-			umin.Mul(umin, big.NewInt(j))
-
-			umax := new(big.Int)
-			umax.Add(umin, ublock)
-			unit := NewUnit(umin, umax)
-			slice.units = append(slice.units, unit)
+		slice.Min = new(big.Int)
+		slice.Min.Mul(block, big.NewInt(i*int64(u)))
+		slice.Max.Mul(block, big.NewInt((i+1)*int64(u)))
+		if slice.Max.Cmp(max_num) > 0 {
+			slice.Max.SetBytes(fullByte)
 		}
 		l.PushBack(slice)
+		slice.units = make([]*Unit, 0)
+
+		for j := int64(0); j < int64(u); j++ {
+			unit := new(Unit)
+			unit.Min = new(big.Int)
+			unit.Max = new(big.Int)
+
+			unit.Min.Mul(block, big.NewInt(j))
+			unit.Min.Add(unit.Min, slice.Min)
+
+			unit.Max.Add(unit.Min, block)
+			if unit.Max.Cmp(max_num) > 0 {
+				unit.Max.SetBytes(fullByte)
+			}
+
+			slice.units = append(slice.units, unit)
+		}
 	}
 
 	return &Route{l, k}

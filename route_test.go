@@ -18,10 +18,10 @@ func TestNewRoute(t *testing.T) {
 	i := 0
 	for elem := r.slices.Front(); elem != nil; elem = elem.Next() {
 		slice := elem.Value.(*Slice)
-		fmt.Printf("%d  Min %x Max %x\n", i, slice.Min.Bytes(), slice.Max.Bytes())
+		fmt.Printf("%d  Min %0x Max %0x\n", i, slice.Min.Bytes(), slice.Max.Bytes())
 		for j := 0; j < len(slice.units); j++ {
 			u := slice.units[j]
-			fmt.Printf("|---  %d, Min %x Max %x\n", j, u.Min, u.Max)
+			fmt.Printf("|---  %d, Min %016X Max %016X\n", j, u.Min, u.Max)
 		}
 		i++
 	}

@@ -1,6 +1,7 @@
 package onehop
 
 import (
+	"fmt"
 	"math/big"
 )
 
@@ -13,6 +14,8 @@ type Slice struct {
 
 func NewUnit(min, max *big.Int) *Unit {
 
+	fmt.Printf("Min  %x\n", min.Bytes())
+	fmt.Printf("max %x\n", max.Bytes())
 	l := make([]*Node, 0)
 	return &Unit{Min: min, Max: max, NodeList: l}
 }
