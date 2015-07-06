@@ -1,7 +1,7 @@
 package onehop
 
 import (
-	"fmt"
+	_ "fmt"
 	"math/big"
 	"sort"
 )
@@ -15,9 +15,6 @@ type Slice struct {
 }
 
 func NewUnit(min, max *big.Int) *Unit {
-
-	fmt.Printf("Min  %x\n", min.Bytes())
-	fmt.Printf("max %x\n", max.Bytes())
 
 	nodes := make(ByID, 0)
 	return &Unit{Min: min, Max: max, nodes: nodes}
@@ -76,7 +73,7 @@ func (u *Unit) Len() int {
 
 func (u *Unit) SuccessorOf(id *big.Int) (n *Node) {
 
-	i := sort.Search(len(u.nodes), func(i int) bool { return u.nodes[i].ID.Cmp(id) >= 0 })
+	i := sort.Search(len(u.nodes), func(i int) bool { return u.nodes[i].ID.Cmp(id) > 0 })
 	if i < len(u.nodes) {
 		// ID in our nodes
 		return u.nodes[i]
@@ -86,7 +83,10 @@ func (u *Unit) SuccessorOf(id *big.Int) (n *Node) {
 
 func (u *Unit) PredecessorOf(id *big.Int) (n *Node) {
 
-	i := sort.Search(len(u.nodes), func(i int) bool { return u.nodes[i].ID.Cmp(id) <= 0 })
+	i := sort.Search(len(u.nodes),
+		func(i int) bool {
+			return u.nodes[i].ID.Cmp(id) <= 0
+		})
 	if i < len(u.nodes) {
 		// ID in our nodes
 		return u.nodes[i]

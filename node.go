@@ -2,6 +2,7 @@
 package onehop
 
 import (
+	"fmt"
 	"math/big"
 	"net"
 )
@@ -41,6 +42,10 @@ type Node struct {
 	Type byte
 	IP   net.IP
 	Port uint16
+}
+
+func (n *Node) String() string {
+	return fmt.Sprintf("ID:%016X TYPE:%x Addr:%s:%d", n.ID, n.Type, n.IP, n.Port)
 }
 
 type ByID []*Node
