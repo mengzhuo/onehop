@@ -1,7 +1,6 @@
 package onehop
 
 import (
-	_ "fmt"
 	"math/big"
 	"sort"
 )
@@ -74,9 +73,9 @@ func (u *Unit) Len() int {
 func (u *Unit) SuccessorOf(id *big.Int) (n *Node) {
 
 	i := sort.Search(len(u.nodes), func(i int) bool { return u.nodes[i].ID.Cmp(id) >= 0 })
-	if i < len(u.nodes) {
+	if i+1 < len(u.nodes) {
 		// ID in our nodes
-		return u.nodes[i]
+		return u.nodes[i+1]
 	}
 	return nil
 }
@@ -85,11 +84,19 @@ func (u *Unit) PredecessorOf(id *big.Int) (n *Node) {
 
 	i := sort.Search(len(u.nodes),
 		func(i int) bool {
-			return id.Cmp(u.nodes[i].ID) >= 0
+			return u.nodes[i].ID.Cmp(id) >= 0
 		})
-	if i < len(u.nodes) {
+
+	if i != u.Len() && i-1 >= 0 {
 		// ID in our nodes
-		return u.nodes[i]
+		return u.nodes[i-1]
+	}
+	if i == u.Len() {
+		for i, v := range u.nodes[:u.Len()-2] {
+			if v.ID.Cmp(id) < 0 && u.nodes[i+1].ID.Cmp(id) > 0 {
+				return v
+			}
+		}
 	}
 	return nil
 }
