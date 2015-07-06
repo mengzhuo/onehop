@@ -42,7 +42,7 @@ func (u *Unit) GetID(id *big.Int) (i int) {
 
 	i = sort.Search(len(u.nodes),
 		func(i int) bool {
-			return u.nodes[i].ID.Cmp(id) == 0
+			return u.nodes[i].ID.Cmp(id) >= 0
 		})
 	return i
 }
@@ -50,7 +50,7 @@ func (u *Unit) GetID(id *big.Int) (i int) {
 func (u *Unit) Get(id *big.Int) (n *Node) {
 
 	i := u.GetID(id)
-	if i < len(u.nodes) {
+	if i < len(u.nodes) && u.nodes[i].ID.Cmp(id) == 0 {
 		// ID in our nodes
 		return u.nodes[i]
 	}
@@ -73,7 +73,7 @@ func (u *Unit) Len() int {
 
 func (u *Unit) SuccessorOf(id *big.Int) (n *Node) {
 
-	i := sort.Search(len(u.nodes), func(i int) bool { return u.nodes[i].ID.Cmp(id) > 0 })
+	i := sort.Search(len(u.nodes), func(i int) bool { return u.nodes[i].ID.Cmp(id) >= 0 })
 	if i < len(u.nodes) {
 		// ID in our nodes
 		return u.nodes[i]
@@ -85,7 +85,7 @@ func (u *Unit) PredecessorOf(id *big.Int) (n *Node) {
 
 	i := sort.Search(len(u.nodes),
 		func(i int) bool {
-			return u.nodes[i].ID.Cmp(id) <= 0
+			return id.Cmp(u.nodes[i].ID) >= 0
 		})
 	if i < len(u.nodes) {
 		// ID in our nodes

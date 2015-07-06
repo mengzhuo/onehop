@@ -52,8 +52,8 @@ func TestUnitGetID(t *testing.T) {
 	AddNode(u)
 
 	idx := u.GetID(magic7)
-	if idx != 3 {
-		t.Errorf("Get ID failed with 3 != %d  %v", idx, u.nodes)
+	if idx != 4 {
+		t.Errorf("Get ID failed with 4 != %d  %v", idx, u.nodes)
 	}
 	idx = u.GetID(big.NewInt(int64(10)))
 	if idx != u.Len() {
