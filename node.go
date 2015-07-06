@@ -42,3 +42,9 @@ type Node struct {
 	IP   net.IP
 	Port uint16
 }
+
+type ByID []*Node
+
+func (b ByID) Len() int           { return len(b) }
+func (b ByID) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
+func (b ByID) Less(i, j int) bool { return b[i].ID.Cmp(b[j].ID) < 0 }
