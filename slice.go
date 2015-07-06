@@ -13,16 +13,24 @@ type Slice struct {
 	units []*Unit
 }
 
-func (s *Slice) GetUnit(id *big.Int) *Unit {
+func (s *Slice) GetUnitIndex(id *big.Int) int {
+
+	if id.Cmp(s.Min) <= 0 || id.Cmp(s.Max) > 0 {
+		return len(s.units)
+	}
 
 	i := sort.Search(len(s.units),
 		func(i int) bool {
-			return s.units[i].Min.Cmp(id) < 0 && s.units[i].Max.Cmp(id) >= 0
+			return s.units[i].Min.Cmp(id) >= 0
 		})
 
-	if i < len(s.units) {
-		return s.units[i]
+	if i < len(s.units) && i > 0 {
+		i -= 1
 	}
 
-	return nil
+	if i == 0 {
+		return 0
+	}
+
+	return i
 }

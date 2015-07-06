@@ -38,6 +38,8 @@ func NewRoute(k int, u int) *Route {
 		slice.Max.Mul(block, big.NewInt((i+1)*int64(u)))
 		if slice.Max.Cmp(max_num) > 0 {
 			slice.Max.SetBytes(fullByte)
+		} else {
+			slice.Max.Sub(slice.Max, big.NewInt(int64(1)))
 		}
 		l.PushBack(slice)
 		slice.units = make([]*Unit, 0)
@@ -54,6 +56,8 @@ func NewRoute(k int, u int) *Route {
 			unit.Max.Add(unit.Min, block)
 			if unit.Max.Cmp(max_num) > 0 {
 				unit.Max.SetBytes(fullByte)
+			} else {
+				unit.Max.Sub(unit.Max, big.NewInt(int64(1)))
 			}
 
 			slice.units = append(slice.units, unit)
