@@ -43,6 +43,7 @@ func NewRoute(k int, u int) *Route {
 		slice.units = make([]*Unit, 0)
 
 		for j := int64(0); j < int64(u); j++ {
+			// Sorted units
 			unit := new(Unit)
 			unit.Min = new(big.Int)
 			unit.Max = new(big.Int)

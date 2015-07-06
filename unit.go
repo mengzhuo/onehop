@@ -5,14 +5,6 @@ import (
 	"sort"
 )
 
-type Slice struct {
-	Leader *Node
-	Min    *big.Int
-	Max    *big.Int
-	// Units should be preallocated and sorted
-	units []*Unit
-}
-
 func NewUnit(min, max *big.Int) *Unit {
 
 	nodes := make(ByID, 0)
@@ -72,7 +64,7 @@ func (u *Unit) Len() int {
 
 func (u *Unit) SuccessorOf(id *big.Int) (n *Node) {
 
-	i := sort.Search(len(u.nodes), func(i int) bool { return u.nodes[i].ID.Cmp(id) >= 0 })
+	i := u.GetID(id)
 	if i+1 < len(u.nodes) {
 		// ID in our nodes
 		return u.nodes[i+1]
@@ -82,11 +74,7 @@ func (u *Unit) SuccessorOf(id *big.Int) (n *Node) {
 
 func (u *Unit) PredecessorOf(id *big.Int) (n *Node) {
 
-	i := sort.Search(len(u.nodes),
-		func(i int) bool {
-			return u.nodes[i].ID.Cmp(id) >= 0
-		})
-
+	i := u.GetID(id)
 	if i != u.Len() && i-1 >= 0 {
 		// ID in our nodes
 		return u.nodes[i-1]
