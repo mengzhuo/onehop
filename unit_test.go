@@ -15,15 +15,6 @@ func NewTestUnit() *Unit {
 	return u
 }
 
-func AddNode(u *Unit) {
-
-	for i := 1; i < 14; i = i + 2 {
-		n := &Node{ID: big.NewInt(int64(i))}
-		u.Add(n)
-	}
-
-}
-
 func TestNewUnit(t *testing.T) {
 
 	u := NewTestUnit()

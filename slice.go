@@ -35,3 +35,11 @@ func (s *Slice) GetUnitIndex(id *big.Int) int {
 
 	return i
 }
+
+func (s *Slice) Len() int {
+	i := 0
+	for _, u := range s.units {
+		i += u.Len()
+	}
+	return i
+}
