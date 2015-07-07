@@ -1,7 +1,10 @@
 // Package onehop provides ...
 package onehop
 
-import "math/big"
+import (
+	"fmt"
+	"math/big"
+)
 
 var (
 	fullByte = []byte{0xff, 0xff, 0xff, 0xff,
@@ -45,50 +48,44 @@ func (r *Route) GetNode(id *big.Int) (n *Node) {
 	return unit.Get(id)
 }
 
+func (r *Route) forward(slice_idx, unit_idx int) (sidx, uidx int) {
+
+	sidx, uidx = slice_idx, unit_idx
+
+	// Uidx not full
+	if uidx != r.u-1 {
+		uidx++
+		return
+	}
+
+	// Uidx fulled goto next slice
+	uidx = 0
+	sidx++
+	if sidx == r.k-1 {
+		sidx = 0
+	}
+	return
+}
+
 func (r *Route) SuccessorOf(id *big.Int) (n *Node) {
 
 	slice_idx, unit_idx := r.GetIndex(id)
-
-	slice := r.slices[slice_idx]
-	unit := slice.units[unit_idx]
-
-	n = unit.Get(id)
-	if n != nil {
-		return n
-	}
-
-	n = unit.SuccessorOf(id)
-
-	if n != nil {
-		return n
-	}
-
 	start_slice, start_unit := slice_idx, unit_idx
-
-	if unit_idx != r.u-1 {
-		unit_idx++
-	} else {
-		unit_idx = 0
-		slice_idx++
+	n = r.findSuccessorOf(id, slice_idx, unit_idx)
+	if n != nil {
+		return
 	}
-
+	fmt.Println(slice_idx, unit_idx)
 	// We don't want recycle
 	for unit_idx != start_unit && slice_idx != start_slice {
-
-		slice = r.slices[slice_idx]
-		n = slice.units[unit_idx].SuccessorOf(id)
+		n = r.findSuccessorOf(id, slice_idx, unit_idx)
+		fmt.Println(slice_idx, unit_idx)
 		if n != nil {
-			return n
-		}
-		if unit_idx != r.u-1 {
-			unit_idx++
-		} else {
-			unit_idx = 0
-			slice_idx++
+			break
 		}
 	}
 
-	return nil
+	return
 }
 
 func (r *Route) Add(n *Node) (ok bool) {

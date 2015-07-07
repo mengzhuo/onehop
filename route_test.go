@@ -54,4 +54,7 @@ func TestRouteGetSliceIndex(t *testing.T) {
 
 func TestRouteSuccessorOf(t *testing.T) {
 	r := NewRoute(8, 10)
+	AddNode(r.slices[0].units[0])
+	n := r.SuccessorOf(big.NewInt(int64(99)))
+	fmt.Println(n)
 }
