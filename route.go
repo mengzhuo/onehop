@@ -2,14 +2,24 @@
 package onehop
 
 import (
-	"container/list"
-	_ "fmt"
 	"math/big"
 )
 
 type Route struct {
-	slices *list.List
+	slices []*Slice
 	k      int // number of slices the ring is divided into
+}
+
+func (r *Route) Get(id string) (n *Node) {
+
+	return
+}
+func (r *Route) Add(n *Node) (ok bool) {
+
+	return
+}
+func (r *Route) Delete(id string) {
+
 }
 
 func NewRoute(k int, u int) *Route {
@@ -28,7 +38,7 @@ func NewRoute(k int, u int) *Route {
 	max_num := new(big.Int)
 	max_num.SetBytes(fullByte)
 
-	l := list.New()
+	l := make([]*Slice, 0)
 
 	for i := int64(0); i < int64(k); i++ {
 		slice := new(Slice)
@@ -41,7 +51,9 @@ func NewRoute(k int, u int) *Route {
 		} else {
 			slice.Max.Sub(slice.Max, big.NewInt(int64(1)))
 		}
-		l.PushBack(slice)
+
+		l = append(l, slice)
+
 		slice.units = make([]*Unit, 0)
 
 		for j := int64(0); j < int64(u); j++ {

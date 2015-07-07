@@ -10,14 +10,12 @@ func TestNewRoute(t *testing.T) {
 	if r.k != 4 {
 		t.Error("R.k != 4")
 	}
-	if r.slices.Len() != 4 {
-		t.Errorf("Len Not match :%d", r.slices.Len())
+	if len(r.slices) != 4 {
+		t.Errorf("Len Not match :%d", len(r.slices))
 	}
 	fmt.Printf("%#v\n", r)
 
-	i := 0
-	for elem := r.slices.Front(); elem != nil; elem = elem.Next() {
-		slice := elem.Value.(*Slice)
+	for i, slice := range r.slices {
 		fmt.Printf("%d  Min %0x Max %0x\n", i, slice.Min.Bytes(), slice.Max.Bytes())
 		for j := 0; j < len(slice.units); j++ {
 			u := slice.units[j]

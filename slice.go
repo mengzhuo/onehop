@@ -16,6 +16,7 @@ type Slice struct {
 func (s *Slice) GetUnitIndex(id *big.Int) int {
 
 	if id.Cmp(s.Min) <= 0 || id.Cmp(s.Max) > 0 {
+		// Not in our slice
 		return len(s.units)
 	}
 
