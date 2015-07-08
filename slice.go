@@ -1,9 +1,6 @@
 package onehop
 
-import (
-	"math/big"
-	"sort"
-)
+import "math/big"
 
 type Slice struct {
 	Leader *Node
@@ -13,27 +10,21 @@ type Slice struct {
 	units []*Unit
 }
 
-func (s *Slice) GetUnitIndex(id *big.Int) int {
+func (s *Slice) updateLeader() {
 
-	if id.Cmp(s.Min) <= 0 || id.Cmp(s.Max) > 0 {
-		// Not in our slice
-		return len(s.units)
+	for i := len(s.units) / 2; i >= 0; i-- {
+		if leader := s.units[i].Leader; leader != nil {
+			s.Leader = leader
+			return
+		}
+
+		j := len(s.units) - i - 1
+		if leader := s.units[j].Leader; leader != nil {
+			s.Leader = leader
+			return
+		}
 	}
-
-	i := sort.Search(len(s.units),
-		func(i int) bool {
-			return s.units[i].Min.Cmp(id) >= 0
-		})
-
-	if i < len(s.units) && i > 0 {
-		i -= 1
-	}
-
-	if i == 0 {
-		return 0
-	}
-
-	return i
+	s.Leader = nil
 }
 
 func (s *Slice) Len() int {

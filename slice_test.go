@@ -1,9 +1,6 @@
 package onehop
 
-import (
-	"math/big"
-	"testing"
-)
+import "math/big"
 
 func NewSlice() *Slice {
 
@@ -32,23 +29,4 @@ func NewSlice() *Slice {
 	}
 
 	return slice
-}
-
-func TestGetUnitIndex(t *testing.T) {
-
-	s := NewSlice()
-	idx := s.GetUnitIndex(big.NewInt(int64(63)))
-	if 8 != idx {
-		t.Errorf("Error on Get Not existed %d", idx)
-	}
-
-	idx = s.GetUnitIndex(big.NewInt(int64(384)))
-	if 4 != idx {
-		t.Errorf("Error on Get Min:%d", idx)
-	}
-
-	idx = s.GetUnitIndex(big.NewInt(int64(385)))
-	if 5 != idx {
-		t.Errorf("Error on Get Inside:%d", idx)
-	}
 }

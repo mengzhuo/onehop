@@ -30,11 +30,11 @@ func TestUnitAdd(t *testing.T) {
 
 	normal_n := &Node{ID: big.NewInt(int64(4))}
 
-	if ok := u.Add(normal_n); !ok {
+	if ok := u.add(normal_n); !ok {
 		t.Error("Add normal Failed")
 	}
 
-	if ok := u.Add(n); ok {
+	if ok := u.add(n); ok {
 		t.Error("Add Failed")
 	}
 }
@@ -42,11 +42,11 @@ func TestUnitGetID(t *testing.T) {
 	u := NewTestUnit()
 	AddNode(u)
 
-	idx := u.GetID(magic7)
+	idx := u.getID(magic7)
 	if idx != 3 {
 		t.Errorf("Get ID failed with 3 != %d  %v", idx, u.nodes)
 	}
-	idx = u.GetID(big.NewInt(int64(10)))
+	idx = u.getID(big.NewInt(int64(10)))
 	if idx != 5 {
 		t.Errorf("Get ID failed with 5 != %d  %v", idx, u.nodes[idx])
 	}
@@ -83,7 +83,7 @@ func TestUnitSuccessorOf(t *testing.T) {
 	u := NewTestUnit()
 	AddNode(u)
 
-	n := u.SuccessorOf(magic7)
+	n := u.successorOf(magic7)
 	if n.ID.Cmp(magic7) < 0 {
 		t.Errorf("SuccessorOf Failed:%s", n)
 	}
@@ -92,15 +92,12 @@ func TestUnitSuccessorOf(t *testing.T) {
 	}
 }
 
-func TestUnitPredecessorOf(t *testing.T) {
+func TestUnitUpdateLeader(t *testing.T) {
 	u := NewTestUnit()
 	AddNode(u)
-	n := u.PredecessorOf(magic7)
-	if n == nil {
-		t.Fatalf("Can't not get precessor of magic 7")
-	}
 
-	if n.ID.Cmp(magic7) >= 0 {
-		t.Errorf("PredecessorOf Failed:%s", n)
+	if u.Leader == nil || u.Leader.ID.String() != "7" {
+		t.Errorf("%v", u)
+
 	}
 }

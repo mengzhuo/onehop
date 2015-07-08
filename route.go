@@ -2,15 +2,16 @@
 package onehop
 
 import (
-	"fmt"
 	"math/big"
+	"sync"
 )
 
 var (
-	fullByte = []byte{0xff, 0xff, 0xff, 0xff,
+	FullID = []byte{0xff, 0xff, 0xff, 0xff,
 		0xff, 0xff, 0xff, 0xff,
 		0xff, 0xff, 0xff, 0xff,
 		0xff, 0xff, 0xff, 0xff}
+	zeroID = big.NewInt(int64(0))
 )
 
 type Route struct {
@@ -18,6 +19,7 @@ type Route struct {
 	k      int // number of slices the ring is divided into
 	u      int
 	block  *big.Int
+	mu     *sync.RWMutex
 }
 
 func (r *Route) Len() int {
@@ -39,6 +41,9 @@ func (r *Route) GetIndex(id *big.Int) (sliceidx, unitidex int) {
 }
 
 func (r *Route) GetNode(id *big.Int) (n *Node) {
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 
 	slice_idx, unit_idx := r.GetIndex(id)
 
@@ -70,19 +75,18 @@ func (r *Route) forward(slice_idx, unit_idx int) (sidx, uidx int) {
 func (r *Route) SuccessorOf(id *big.Int) (n *Node) {
 
 	slice_idx, unit_idx := r.GetIndex(id)
-	start_slice, start_unit := slice_idx, unit_idx
-	n = r.findSuccessorOf(id, slice_idx, unit_idx)
-	if n != nil {
-		return
-	}
-	fmt.Println(slice_idx, unit_idx)
-	// We don't want recycle
-	for unit_idx != start_unit && slice_idx != start_slice {
-		n = r.findSuccessorOf(id, slice_idx, unit_idx)
-		fmt.Println(slice_idx, unit_idx)
+
+	for i := 0; i < r.u*r.k; i++ {
+		slice := r.slices[slice_idx]
+		unit := slice.units[unit_idx]
+
+		n = unit.successorOf(id)
 		if n != nil {
 			break
 		}
+		slice_idx, unit_idx = r.forward(slice_idx, unit_idx)
+		// Reset to 0 for loop back
+		id = zeroID
 	}
 
 	return
@@ -90,18 +94,29 @@ func (r *Route) SuccessorOf(id *big.Int) (n *Node) {
 
 func (r *Route) Add(n *Node) (ok bool) {
 
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	slice_idx, unit_idx := r.GetIndex(n.ID)
 	slice := r.slices[slice_idx]
-	if slice.Len() == 0 {
-		slice.Leader = n
-	}
 
 	unit := slice.units[unit_idx]
-	unit.Add(n)
-	return true
+	result := unit.add(n)
+	slice.updateLeader()
+	return result
 }
-func (r *Route) Delete(id string) {
+func (r *Route) Delete(id *big.Int) (ok bool) {
 
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	slice_idx, unit_idx := r.GetIndex(id)
+	slice := r.slices[slice_idx]
+
+	unit := slice.units[unit_idx]
+	result := unit.Delete(id)
+	slice.updateLeader()
+	return result
 }
 
 func NewRoute(k int, u int) *Route {
@@ -111,13 +126,13 @@ func NewRoute(k int, u int) *Route {
 	}
 
 	block := new(big.Int)
-	block.SetBytes(fullByte)
+	block.SetBytes(FullID)
 	block.Div(block, big.NewInt(int64(k*u)))
 	// TODO wired length issues on divied number
 	block.Add(block, big.NewInt(1))
 
 	max_num := new(big.Int)
-	max_num.SetBytes(fullByte)
+	max_num.SetBytes(FullID)
 
 	l := make([]*Slice, 0)
 
@@ -128,7 +143,7 @@ func NewRoute(k int, u int) *Route {
 		slice.Min.Mul(block, big.NewInt(i*int64(u)))
 		slice.Max.Mul(block, big.NewInt((i+1)*int64(u)))
 		if slice.Max.Cmp(max_num) > 0 {
-			slice.Max.SetBytes(fullByte)
+			slice.Max.SetBytes(FullID)
 		} else {
 			slice.Max.Sub(slice.Max, big.NewInt(int64(1)))
 		}
@@ -148,7 +163,7 @@ func NewRoute(k int, u int) *Route {
 
 			unit.Max.Add(unit.Min, block)
 			if unit.Max.Cmp(max_num) > 0 {
-				unit.Max.SetBytes(fullByte)
+				unit.Max.SetBytes(FullID)
 			} else {
 				unit.Max.Sub(unit.Max, big.NewInt(int64(1)))
 			}
@@ -157,5 +172,5 @@ func NewRoute(k int, u int) *Route {
 		}
 	}
 
-	return &Route{l, k, u, block}
+	return &Route{l, k, u, block, new(sync.RWMutex)}
 }
