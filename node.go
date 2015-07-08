@@ -23,7 +23,6 @@ type RecordID [ID_SIZE]byte
 
 type RemoteNode struct {
 	ID   RecordID
-	Type byte
 	IP   [4]byte
 	Port uint16
 }
@@ -33,19 +32,18 @@ func (self *RemoteNode) RemoteToNode() *Node {
 	id := new(big.Int)
 	id.SetBytes(self.ID[:])
 	ip := net.IPv4(self.IP[0], self.IP[1], self.IP[2], self.IP[3])
-	return &Node{id, self.Type, ip, self.Port}
+	return &Node{id, ip, self.Port}
 
 }
 
 type Node struct {
 	ID   *big.Int
-	Type byte
 	IP   net.IP
 	Port uint16
 }
 
 func (n *Node) String() string {
-	return fmt.Sprintf("ID:%016X TYPE:%x Addr:%s:%d", n.ID, n.Type, n.IP, n.Port)
+	return fmt.Sprintf("ID:%016X Addr:%s:%d", n.ID, n.IP, n.Port)
 }
 
 type ByID []*Node

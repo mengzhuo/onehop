@@ -1,5 +1,7 @@
 package onehop
 
+const IDENTIFIER = 0x6f
+
 // Message Type
 const (
 	_ = iota // 0x0 skipped
@@ -7,6 +9,10 @@ const (
 	KEEP_ALIVE
 	EVENT_NOTIFICATION
 	MESSAGE_EXCHANGE
+	STORE
+	FIND_VALUE
+	FIND_NODE
+	REPLICATE
 )
 
 // Event
@@ -21,8 +27,20 @@ type MessageHeader struct {
 	Type    byte
 }
 
-type KeepAliveMessage struct {
-	Hdr         MessageHeader
+type KeepAliveMsg struct {
+	Hdr         *MessageHeader
+	RecordCount uint8
+	Records     []RemoteNode
+}
+
+type EventNotificationMsg struct {
+	Hdr         *MessageHeader
+	RecordCount uint8
+	Records     []RemoteNode
+}
+
+type MessageExchangeMsg struct {
+	Hdr         *MessageHeader
 	RecordCount uint8
 	Records     []RemoteNode
 }
