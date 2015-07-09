@@ -4,6 +4,7 @@ package onehop
 import (
 	"math/big"
 	"sync"
+	"time"
 )
 
 var (
@@ -13,6 +14,8 @@ var (
 		0xff, 0xff, 0xff, 0xff}
 	zeroID = big.NewInt(int64(0))
 )
+
+const NODE_TIMEOUT = 10 * time.Second
 
 type Route struct {
 	slices []*Slice

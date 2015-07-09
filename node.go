@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"time"
 )
 
 // Node Type
@@ -22,28 +23,60 @@ const (
 type RecordID [ID_SIZE]byte
 
 type RemoteNode struct {
-	ID   RecordID
-	IP   [4]byte
-	Port uint16
+	ID     RecordID
+	Status byte
+	IP     [4]byte
+	Port   uint16
 }
 
-func (self *RemoteNode) RemoteToNode() *Node {
+func (self *RemoteNode) ProLen() int {
+	return ID_SIZE + 4 + 2
+}
+
+func (self *RemoteNode) ToNode() *Node {
 
 	id := new(big.Int)
 	id.SetBytes(self.ID[:])
 	ip := net.IPv4(self.IP[0], self.IP[1], self.IP[2], self.IP[3])
-	return &Node{id, ip, self.Port}
+	addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", ip, self.Port))
+	if err != nil {
+		return nil
+	}
+	return &Node{ID: id, Addr: addr}
 
+}
+
+func NewRemoteNodeFromByte(p []byte) *RemoteNode {
+
+	var id RecordID
+	off := 0
+
+	for i := 0; i < ID_SIZE; i++ {
+		id[i] = p[i]
+		off++
+	}
+	status := p[off]
+	off++
+
+	var ip [4]byte
+	for i := 0; i < 4; i++ {
+		ip[i] = p[off]
+		off++
+	}
+	fmt.Printf("IP:%x", ip)
+	port := uint16(p[off])<<8 | uint16(p[off+1])
+
+	return &RemoteNode{id, status, ip, port}
 }
 
 type Node struct {
-	ID   *big.Int
-	IP   net.IP
-	Port uint16
+	ID     *big.Int
+	Addr   *net.UDPAddr
+	Ticker *time.Ticker
 }
 
 func (n *Node) String() string {
-	return fmt.Sprintf("ID:%016X Addr:%s:%d", n.ID, n.IP, n.Port)
+	return fmt.Sprintf("ID:%016X Addr:%s", n.ID, n.Addr)
 }
 
 type ByID []*Node

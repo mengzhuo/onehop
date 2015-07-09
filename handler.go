@@ -5,40 +5,59 @@ import (
 	"net"
 )
 
-func (s *Service) Handle(addr *net.UDPAddr, hdr *MessageHeader, body []byte) {
+func (s *Service) Handle(raddr *net.UDPAddr, hdr *MessageHeader, body []byte) {
+
 	// Main handle function for ALL msg
 	switch hdr.Type {
 
 	case KEEP_ALIVE:
-		s.KeepAlive(addr, hdr, body)
-	case EVENT_NOTIFICATION:
-
-	case MESSAGE_EXCHANGE:
-
-	case STORE:
-
-	case FIND_NODE:
-
-	case FIND_VALUE:
-
-	case REPLICATE:
-
+		s.KeepAlive(raddr, hdr, body)
+	case KEEP_ALIVE_RESPONSE:
+		s.KeepAliveResponse(raddr, hdr, body)
 	default:
 		log.Printf("UnKnown message %s %x", hdr, body)
 	}
 }
 
-func (s *Service) KeepAlive(addr *net.UDPAddr, hdr *MessageHeader, p []byte) {
-	count := int8(p[0])
-	if count == 0 || count > 120 {
+func (s *Service) KeepAliveResponse(raddr *net.UDPAddr, hdr *MessageHeader, p []byte) {
+
+}
+
+func (s *Service) KeepAlive(raddr *net.UDPAddr, hdr *MessageHeader, p []byte) {
+
+	from := readID(p)
+	records, _, ok := loadRecords(p, 16)
+
+	if !ok {
 		return
 	}
-	rset := make([]RemoteNode, count)
-	for i := int8(0); i < count; i++ {
-		off := 22*int(i) + 1
-		r := rset[i]
-		for j := 0; j < len(r.ID); j++ {
-			r.ID[j] = p[off+j]
+
+	for _, rn := range records {
+
+		n := rn.ToNode()
+		switch rn.Status {
+		case JOIN:
+			s.route.Add(n)
+		case LEAVE:
+			s.route.Delete(n.ID)
 		}
 	}
+
+	sidx, uidx := s.route.GetIndex(s.id)
+	unit := s.route.slices[sidx].units[uidx]
+
+	i := unit.getID(from)
+	cmp := from.Cmp(s.id)
+
+	switch {
+	case cmp == -1 && i > 0:
+		i--
+	case cmp == 1 && (i < unit.Len()-1):
+		i++
+	}
+	// Send to successor/predecessor in unit
+	n := unit.nodes[i]
+	s.Send(n.Addr, []byte{})
+	// Response to requester
+	s.Send(raddr, hdr.ToBytes())
 }
