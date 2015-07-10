@@ -1,16 +1,18 @@
 package onehop
 
 import (
+	"encoding/json"
 	"log"
 	"net"
 )
 
-func (s *Service) Handle(raddr *net.UDPAddr, hdr *MessageHeader, body []byte) {
+func (s *Service) Handle(raddr *net.UDPAddr, typ byte, id []byte, body []byte) {
 
 	// Main handle function for ALL msg
-	switch hdr.Type {
+	switch typ {
 
 	case KEEP_ALIVE:
+		json.Unmarshal(body, new(KeepAliveMsg))
 		s.KeepAlive(raddr, hdr, body)
 	case KEEP_ALIVE_RESPONSE:
 		s.KeepAliveResponse(raddr, hdr, body)
@@ -19,18 +21,7 @@ func (s *Service) Handle(raddr *net.UDPAddr, hdr *MessageHeader, body []byte) {
 	}
 }
 
-func (s *Service) KeepAliveResponse(raddr *net.UDPAddr, hdr *MessageHeader, p []byte) {
-
-}
-
 func (s *Service) KeepAlive(raddr *net.UDPAddr, hdr *MessageHeader, p []byte) {
-
-	from := readID(p)
-	records, _, ok := loadRecords(p, 16)
-
-	if !ok {
-		return
-	}
 
 	for _, rn := range records {
 

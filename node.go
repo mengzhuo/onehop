@@ -24,21 +24,15 @@ type RecordID [ID_SIZE]byte
 
 type RemoteNode struct {
 	ID     RecordID
-	Status byte
-	IP     [4]byte
-	Port   uint16
-}
-
-func (self *RemoteNode) ProLen() int {
-	return ID_SIZE + 4 + 2
+	Status string
+	Addr   string
 }
 
 func (self *RemoteNode) ToNode() *Node {
 
 	id := new(big.Int)
 	id.SetBytes(self.ID[:])
-	ip := net.IPv4(self.IP[0], self.IP[1], self.IP[2], self.IP[3])
-	addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", ip, self.Port))
+	addr, err := net.ResolveUDPAddr("udp", self.Addr)
 	if err != nil {
 		return nil
 	}
@@ -46,33 +40,30 @@ func (self *RemoteNode) ToNode() *Node {
 
 }
 
-func NewRemoteNodeFromByte(p []byte) *RemoteNode {
-
-	var id RecordID
-	off := 0
-
-	for i := 0; i < ID_SIZE; i++ {
-		id[i] = p[i]
-		off++
-	}
-	status := p[off]
-	off++
-
-	var ip [4]byte
-	for i := 0; i < 4; i++ {
-		ip[i] = p[off]
-		off++
-	}
-	fmt.Printf("IP:%x", ip)
-	port := uint16(p[off])<<8 | uint16(p[off+1])
-
-	return &RemoteNode{id, status, ip, port}
+type Node struct {
+	ID       *big.Int
+	Addr     *net.UDPAddr
+	updateAt time.Time
+	ticker   *time.Ticker
 }
 
-type Node struct {
-	ID     *big.Int
-	Addr   *net.UDPAddr
-	Ticker *time.Ticker
+func (n *Node) resetTimer() {
+
+	if n.ticker == nil {
+		n.ticker = time.NewTicker(2 * time.Second)
+		go n.startTick()
+	}
+	n.updateAt = time.Now()
+}
+
+func (n *Node) startTick() {
+
+	for t := range n.ticker.C {
+		if t.After(n.updateAt.Add(NODE_TIMEOUT)) {
+			route.timeoutNode <- n
+			break
+		}
+	}
 }
 
 func (n *Node) String() string {

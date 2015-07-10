@@ -1,6 +1,7 @@
 package onehop
 
 import (
+	"log"
 	"math/big"
 	"sort"
 )
@@ -64,6 +65,7 @@ func (u *Unit) add(n *Node) bool {
 		u.updateLeader()
 	}
 
+	log.Printf("Unit %x add %x", u.Max, n.ID)
 	return true
 }
 

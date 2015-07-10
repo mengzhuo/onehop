@@ -2,6 +2,7 @@
 package onehop
 
 import (
+	"log"
 	"math/big"
 	"sync"
 	"time"
@@ -18,11 +19,12 @@ var (
 const NODE_TIMEOUT = 10 * time.Second
 
 type Route struct {
-	slices []*Slice
-	k      int // number of slices the ring is divided into
-	u      int
-	block  *big.Int
-	mu     *sync.RWMutex
+	slices      []*Slice
+	k           int // number of slices the ring is divided into
+	u           int
+	block       *big.Int
+	mu          *sync.RWMutex
+	timeoutNode chan *Node
 }
 
 func (r *Route) Len() int {
@@ -104,8 +106,13 @@ func (r *Route) Add(n *Node) (ok bool) {
 	slice := r.slices[slice_idx]
 
 	unit := slice.units[unit_idx]
+
 	result := unit.add(n)
+	if result {
+		n.resetTimer()
+	}
 	slice.updateLeader()
+
 	return result
 }
 func (r *Route) Delete(id *big.Int) (ok bool) {
@@ -127,7 +134,7 @@ func NewRoute(k int, u int) *Route {
 	if k < 2 || u < 2 {
 		panic("K or U can't not less than 2")
 	}
-
+	log.Printf("starting route k=%d, u=%d", k, u)
 	block := new(big.Int)
 	block.SetBytes(FullID)
 	block.Div(block, big.NewInt(int64(k*u)))
@@ -175,5 +182,14 @@ func NewRoute(k int, u int) *Route {
 		}
 	}
 
-	return &Route{l, k, u, block, new(sync.RWMutex)}
+	r := &Route{l, k, u, block, new(sync.RWMutex),
+		make(chan *Node, 16)}
+	go r.Serve()
+	return r
+}
+
+func (r *Route) Serve() {
+	for n := range r.timeoutNode {
+		r.Delete(n.ID)
+	}
 }
