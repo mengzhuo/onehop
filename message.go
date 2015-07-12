@@ -1,14 +1,18 @@
 package onehop
 
+import (
+	"math/big"
+	"math/rand"
+)
+
 const (
 	IDENTIFIER   = 0x31
-	IDENTIFIER2  = 0x5e
 	MSG_MAX_SIZE = 8192
 )
 
 // Message Type
 const (
-	_ = iota + 0x29 // "0"
+	_ = iota
 	BOOTSTRAP
 	KEEP_ALIVE
 	KEEP_ALIVE_RESPONSE
@@ -16,8 +20,7 @@ const (
 	MESSAGE_EXCHANGE
 	STORE
 	FIND_VALUE
-	FIND_NODE
-	REPLICATE
+	FIND_VALUE_RESPONSE
 )
 
 // Event
@@ -27,18 +30,38 @@ const (
 	LEAVE
 )
 
-type KeepAliveMsg struct {
-	From        RecordID
-	RecordCount int
-	Records     []RemoteNode
+type Msg struct {
+	ID     uint32   `json:"i"`
+	Type   uint8    `json:"t"`
+	From   *big.Int `json:"f"` // ID of remote node
+	Events []Event  `json:"e,omitempty"`
 }
 
-type EventNotificationMsg struct {
-	RecordCount int
-	Records     []RemoteNode
+func (m *Msg) NewID() {
+	m.ID = rand.Uint32()
 }
 
-type ExchangeMsg struct {
-	RecordCount int
-	Records     []RemoteNode
+type MsgPool struct {
+	freeList chan *Msg
+}
+
+func (p *MsgPool) Get() (m *Msg) {
+	select {
+	case m = <-p.freeList:
+	default:
+		m = new(Msg)
+	}
+	return m
+}
+
+func (p *MsgPool) Put(m *Msg) {
+
+	// Clear type for not mess around
+	m.Type = 0x0
+	m.ID = 0
+
+	select {
+	case p.freeList <- m:
+	default:
+	}
 }

@@ -16,27 +16,20 @@ const (
 	SLICE_LEADER
 )
 
-const (
-	ID_SIZE int = 16
-)
-
-type RecordID [ID_SIZE]byte
-
-type RemoteNode struct {
-	ID     RecordID
-	Status string
-	Addr   string
+type Event struct {
+	ID     *big.Int  `json:"i"`
+	Time   time.Time `json:"t"`
+	Status uint8     `json:"s"`
+	Addr   string    `json:"a"`
 }
 
-func (self *RemoteNode) ToNode() *Node {
+func (self *Event) ToNode() *Node {
 
-	id := new(big.Int)
-	id.SetBytes(self.ID[:])
 	addr, err := net.ResolveUDPAddr("udp", self.Addr)
 	if err != nil {
 		return nil
 	}
-	return &Node{ID: id, Addr: addr}
+	return &Node{ID: self.ID, Addr: addr}
 
 }
 

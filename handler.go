@@ -1,30 +1,42 @@
 package onehop
 
 import (
-	"encoding/json"
 	"log"
 	"net"
+	"time"
 )
 
-func (s *Service) Handle(raddr *net.UDPAddr, typ byte, id []byte, body []byte) {
+const EVENT_TIMEOUT = 3 * time.Second
+
+func (s *Service) Handle(raddr *net.UDPAddr, msg *Msg) {
 
 	// Main handle function for ALL msg
-	switch typ {
+	switch msg.Type {
 
 	case KEEP_ALIVE:
-		json.Unmarshal(body, new(KeepAliveMsg))
-		s.KeepAlive(raddr, hdr, body)
+		s.KeepAlive(raddr, msg)
 	case KEEP_ALIVE_RESPONSE:
-		s.KeepAliveResponse(raddr, hdr, body)
+		s.route.Refresh(msg.From)
 	default:
-		log.Printf("UnKnown message %s %x", hdr, body)
+		log.Printf("UnKnown message type  %v", msg)
+		return
 	}
 }
 
-func (s *Service) KeepAlive(raddr *net.UDPAddr, hdr *MessageHeader, p []byte) {
+func (s *Service) KeepAlive(raddr *net.UDPAddr, msg *Msg) {
 
-	for _, rn := range records {
+	n := s.route.GetNode(msg.From)
+	if n == nil {
+		n = &Node{ID: msg.From, Addr: raddr, updateAt: time.Now()}
+	}
+	s.route.Add(n)
 
+	for _, rn := range msg.Events {
+
+		if rn.Time.Add(EVENT_TIMEOUT).Before(time.Now()) {
+			log.Printf("Recv timeouted event:%v", rn)
+			continue
+		}
 		n := rn.ToNode()
 		switch rn.Status {
 		case JOIN:
@@ -37,18 +49,35 @@ func (s *Service) KeepAlive(raddr *net.UDPAddr, hdr *MessageHeader, p []byte) {
 	sidx, uidx := s.route.GetIndex(s.id)
 	unit := s.route.slices[sidx].units[uidx]
 
-	i := unit.getID(from)
-	cmp := from.Cmp(s.id)
+	i := unit.getID(msg.From)
+	cmp := msg.From.Cmp(s.id)
 
+	msg.From = s.id
 	switch {
 	case cmp == -1 && i > 0:
 		i--
 	case cmp == 1 && (i < unit.Len()-1):
 		i++
+	default:
+		// we are the end of Unit
+		// Response to requester
+		msg.Type = KEEP_ALIVE_RESPONSE
+		msg.Events = nil
+		s.SendMsg(raddr, msg)
+		return
 	}
-	// Send to successor/predecessor in unit
-	n := unit.nodes[i]
-	s.Send(n.Addr, []byte{})
+
 	// Response to requester
-	s.Send(raddr, hdr.ToBytes())
+	responseMsg := s.msgPool.Get()
+	defer s.msgPool.Put(responseMsg)
+
+	responseMsg.ID = msg.ID
+	responseMsg.From = msg.From
+	responseMsg.Events = msg.Events
+	responseMsg.Type = KEEP_ALIVE_RESPONSE
+	s.SendMsg(raddr, responseMsg)
+	// Send to successor/predecessor in unit
+	msg.NewID()
+	nn := unit.nodes[i]
+	s.SendTimeoutMsg(nn.Addr, nn.ID, msg)
 }

@@ -3,6 +3,7 @@ package onehop
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/big"
@@ -15,8 +16,7 @@ const (
 )
 
 var (
-	route   *Route
-	selfIDs map[*big.Int]bool
+	route *Route
 )
 
 func newListener(netType, address string) (conn *net.UDPConn, err error) {
@@ -39,9 +39,10 @@ type Service struct {
 	route *Route
 
 	bytePool *BytePool
+	msgPool  *MsgPool
+	id       *big.Int
 
-	id  *big.Int
-	vid *big.Int // Vertical ID accross ring
+	requests map[uint32]*Msg
 }
 
 type BytePool struct {
@@ -77,17 +78,15 @@ func NewService(netType, address string, k, u int) *Service {
 
 	log.Printf("Listening to :%s %s", netType, address)
 	route = NewRoute(k, u)
-	messagePool := &MessageHeaderPool{make(chan *MessageHeader, 1024)}
 	bp := &BytePool{make(chan []byte, 1024), 8192}
-
+	mp := &MsgPool{make(chan *Msg, 1024)}
 	max := new(big.Int).SetBytes(FullID)
-	half := new(big.Int).Div(max, big.NewInt(int64(2)))
 
 	id, err := rand.Int(rand.Reader, max)
 	if err != nil {
 		panic(err)
 	}
-
+	log.Printf("initial id:%x", id)
 	n := &Node{ID: id, Addr: listener.LocalAddr().(*net.UDPAddr)}
 	slice_idx, unit_idx := route.GetIndex(n.ID)
 	slice := route.slices[slice_idx]
@@ -96,20 +95,8 @@ func NewService(netType, address string, k, u int) *Service {
 		fmt.Errorf("Can't not add n%s", n)
 	}
 
-	vid := new(big.Int).Add(id, half)
-	if vid.Cmp(max) > 0 {
-		vid.Mod(vid, max)
-	}
-
-	n = &Node{ID: vid, Addr: listener.LocalAddr().(*net.UDPAddr)}
-	slice_idx, unit_idx = route.GetIndex(n.ID)
-	slice = route.slices[slice_idx]
-	unit = slice.units[unit_idx]
-	if !unit.add(n) {
-		fmt.Errorf("Can't not add n%s", n)
-	}
-
-	return &Service{listener, route, bp, id, vid}
+	requests := make(map[uint32]*Msg, 0)
+	return &Service{listener, route, bp, mp, id, requests}
 }
 
 func (s *Service) Listen() {
@@ -118,8 +105,8 @@ func (s *Service) Listen() {
 		p := s.bytePool.Get()
 		n, addr, err := s.conn.ReadFromUDP(p)
 
-		if err != nil || n < 7 || p[0] != IDENTIFIER || p[1] != IDENTIFIER2 {
-			log.Printf("Not Enought for parsing...", addr, p[:n])
+		if err != nil || n < 3 || p[0] != IDENTIFIER {
+			log.Printf("insufficient data for parsing...", addr, p[:n])
 			s.bytePool.Put(p)
 			continue
 		}
@@ -129,10 +116,15 @@ func (s *Service) Listen() {
 				if r := recover(); r != nil {
 					log.Printf("Error on get message %s", r)
 				}
-				// recycle
 				s.bytePool.Put(p)
 			}()
-			s.Handle(addr, p[2], p[2:6], p[6:n])
+			msg := s.msgPool.Get()
+			defer s.msgPool.Put(msg)
+			err := json.Unmarshal(p[1:n], msg)
+			if err != nil {
+				panic(err)
+			}
+			s.Handle(addr, msg)
 		}()
 	}
 }
@@ -150,4 +142,17 @@ func (s *Service) Send(dstAddr *net.UDPAddr, p []byte) {
 	buf[0] = IDENTIFIER
 	buf = append(buf[:1], p...)
 	s.conn.WriteToUDP(buf, dstAddr)
+}
+
+func (s *Service) SendMsg(dstAddr *net.UDPAddr, msg *Msg) {
+
+	p, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("Error on parse %s", msg)
+		return
+	}
+	s.Send(dstAddr, p)
+}
+
+func (s *Service) SendTimeoutMsg(dstAddr *net.UDPAddr, to *big.Int, msg *Msg) {
 }

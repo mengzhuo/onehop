@@ -97,6 +97,24 @@ func (r *Route) SuccessorOf(id *big.Int) (n *Node) {
 	return
 }
 
+func (r *Route) Refresh(id *big.Int) (ok bool) {
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	slice_idx, unit_idx := r.GetIndex(id)
+	slice := r.slices[slice_idx]
+
+	unit := slice.units[unit_idx]
+
+	n := unit.Get(id)
+	if n != nil {
+		n.resetTimer()
+		return true
+	}
+	return false
+}
+
 func (r *Route) Add(n *Node) (ok bool) {
 
 	r.mu.Lock()
@@ -190,6 +208,7 @@ func NewRoute(k int, u int) *Route {
 
 func (r *Route) Serve() {
 	for n := range r.timeoutNode {
+		log.Printf("Node:%x timeouted", n.ID)
 		r.Delete(n.ID)
 	}
 }
