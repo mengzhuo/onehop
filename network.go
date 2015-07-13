@@ -4,15 +4,13 @@ package onehop
 import (
 	"crypto/rand"
 	"encoding/json"
-	"fmt"
 	"log"
 	"math/big"
 	"net"
+	"sync"
 	"time"
-)
 
-const (
-	WRITE_TIME_OUT = 1 * time.Second
+	"github.com/golang/glog"
 )
 
 var (
@@ -42,7 +40,11 @@ type Service struct {
 	msgPool  *MsgPool
 	id       *big.Int
 
-	requests map[uint32]*Msg
+	requests       map[uint32]*Msg
+	requestTimeout chan uint32
+	replyLock      *sync.RWMutex
+
+	Ticker *time.Ticker
 }
 
 type BytePool struct {
@@ -86,17 +88,34 @@ func NewService(netType, address string, k, u int) *Service {
 	if err != nil {
 		panic(err)
 	}
-	log.Printf("initial id:%x", id)
+	glog.Infof("initial id:%x", id)
+
 	n := &Node{ID: id, Addr: listener.LocalAddr().(*net.UDPAddr)}
+	// route.Add(n)
 	slice_idx, unit_idx := route.GetIndex(n.ID)
 	slice := route.slices[slice_idx]
 	unit := slice.units[unit_idx]
-	if !unit.add(n) {
-		fmt.Errorf("Can't not add n%s", n)
+	result := unit.add(n)
+	if !result {
+		glog.Fatalf("Can not initialize node:%v", n)
 	}
+	slice.updateLeader()
 
 	requests := make(map[uint32]*Msg, 0)
-	return &Service{listener, route, bp, mp, id, requests}
+	requestTimeout := make(chan uint32, 1024)
+
+	eventTicker := time.NewTicker(1 * time.Second)
+	return &Service{listener, route, bp, mp, id,
+		requests, requestTimeout, &sync.RWMutex{},
+		eventTicker}
+}
+
+func (s *Service) Tick() {
+
+	for e := range s.Ticker.C {
+		glog.V(8).Infof("ticker @ %s", e)
+
+	}
 }
 
 func (s *Service) Listen() {
@@ -155,4 +174,20 @@ func (s *Service) SendMsg(dstAddr *net.UDPAddr, msg *Msg) {
 }
 
 func (s *Service) SendTimeoutMsg(dstAddr *net.UDPAddr, to *big.Int, msg *Msg) {
+
+	// it should not be any other msg id in here
+	s.replyLock.Lock()
+	defer s.replyLock.Unlock()
+	s.requests[msg.ID] = msg
+	id := msg.ID
+	time.AfterFunc(NODE_TIMEOUT, func() {
+		s.replyLock.Lock()
+		defer s.replyLock.Unlock()
+		log.Printf("Msg %x timeout checking...", msg.ID)
+		if msg, ok := s.requests[id]; ok {
+			delete(s.requests, id)
+			log.Printf("Msg %d timeouted", msg.ID)
+		}
+	})
+	s.SendMsg(dstAddr, msg)
 }

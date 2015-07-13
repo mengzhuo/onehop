@@ -202,11 +202,11 @@ func NewRoute(k int, u int) *Route {
 
 	r := &Route{l, k, u, block, new(sync.RWMutex),
 		make(chan *Node, 16)}
-	go r.Serve()
+	go r.ServeTimeout()
 	return r
 }
 
-func (r *Route) Serve() {
+func (r *Route) ServeTimeout() {
 	for n := range r.timeoutNode {
 		log.Printf("Node:%x timeouted", n.ID)
 		r.Delete(n.ID)
