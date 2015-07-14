@@ -173,5 +173,6 @@ func (s *Service) KeepAlive(raddr *net.UDPAddr, msg *Msg) {
 	// pass msg to successor/predecessor in unit
 	msg.NewID()
 	nn := unit.nodes[i]
+	s.route.Refresh(nn.ID)
 	s.SendTimeoutMsg(nn.Addr, msg)
 }

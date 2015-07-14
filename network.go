@@ -146,11 +146,12 @@ func (s *Service) Tick() {
 func (s *Service) Listen() {
 
 	for {
+
 		p := s.bytePool.Get()
 		n, addr, err := s.conn.ReadFromUDP(p)
-
+		glog.V(9).Infof("Recv data:%x", p[:n])
 		if err != nil || n < 3 || p[0] != IDENTIFIER {
-			log.Printf("insufficient data for parsing...", addr, p[:n])
+			glog.Errorf("insufficient data for parsing...", addr, p[:n])
 			s.bytePool.Put(p)
 			continue
 		}

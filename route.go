@@ -128,9 +128,7 @@ func (r *Route) Add(n *Node) (ok bool) {
 	unit := slice.units[unit_idx]
 
 	result := unit.add(n)
-	if result {
-		n.resetTimer()
-	}
+
 	slice.updateLeader()
 
 	return result
@@ -211,11 +209,10 @@ func NewRoute(k int, u int) *Route {
 
 func (r *Route) ServeTimeout() {
 
-	glog.Infof("ServceTimeout %v v", r)
 	// Node timeout
 	for {
 		n := <-r.timeoutNode
-		log.Printf("Node:%x timeouted", n.ID)
+		glog.Infof("Node:%x timeouted", n.ID)
 		r.Delete(n.ID)
 		slice_idx, _ := r.GetIndex(n.ID)
 		slice := r.slices[slice_idx]
