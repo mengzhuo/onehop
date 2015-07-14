@@ -60,7 +60,7 @@ func (p *MsgPool) Put(m *Msg) {
 	// Clear all fields for not mess around
 	m.Type = 0x0
 	m.ID = 0
-	m.Events = nil
+	m.Events = m.Events[:0]
 	m.From = nil
 
 	select {

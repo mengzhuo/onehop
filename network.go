@@ -14,7 +14,8 @@ import (
 )
 
 var (
-	route *Route
+	route   *Route
+	service *Service
 )
 
 func newListener(netType, address string) (conn *net.UDPConn, err error) {
@@ -44,7 +45,8 @@ type Service struct {
 	requestTimeout chan uint32
 	replyLock      *sync.RWMutex
 
-	Ticker *time.Ticker
+	Ticker        *time.Ticker
+	pendingEvents []Event
 }
 
 type BytePool struct {
@@ -105,16 +107,39 @@ func NewService(netType, address string, k, u int) *Service {
 	requestTimeout := make(chan uint32, 1024)
 
 	eventTicker := time.NewTicker(1 * time.Second)
-	return &Service{listener, route, bp, mp, id,
+
+	pendingEvents := make([]Event, 10)
+	service = &Service{listener, route, bp, mp, id,
 		requests, requestTimeout, &sync.RWMutex{},
-		eventTicker}
+		eventTicker, pendingEvents}
+	return service
 }
 
 func (s *Service) Tick() {
 
+	slice_idx, _ := s.route.GetIndex(s.id)
+	self_slice := s.route.slices[slice_idx]
+
 	for e := range s.Ticker.C {
 		glog.V(8).Infof("ticker @ %s", e)
+		if len(s.pendingEvents) == 0 || self_slice.Leader == nil {
+			continue
+		}
+		msg := s.msgPool.Get()
+		msg.From = s.id
 
+		switch self_slice.Leader.ID.Cmp(s.id) {
+		case -1, 1:
+			//s.SendMsg
+		case 0:
+			// We are leader
+			msg.Type = MESSAGE_EXCHANGE
+			msg.Events = s.pendingEvents[:]
+			s.Exchange(msg)
+		}
+
+		s.pendingEvents = s.pendingEvents[:0]
+		s.msgPool.Put(msg)
 	}
 }
 
@@ -173,13 +198,14 @@ func (s *Service) SendMsg(dstAddr *net.UDPAddr, msg *Msg) {
 	s.Send(dstAddr, p)
 }
 
-func (s *Service) SendTimeoutMsg(dstAddr *net.UDPAddr, to *big.Int, msg *Msg) {
+func (s *Service) SendTimeoutMsg(dstAddr *net.UDPAddr, msg *Msg) {
 
 	// it should not be any other msg id in here
 	s.replyLock.Lock()
 	defer s.replyLock.Unlock()
 	s.requests[msg.ID] = msg
 	id := msg.ID
+
 	time.AfterFunc(NODE_TIMEOUT, func() {
 		s.replyLock.Lock()
 		defer s.replyLock.Unlock()

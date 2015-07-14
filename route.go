@@ -6,6 +6,8 @@ import (
 	"math/big"
 	"sync"
 	"time"
+
+	"github.com/golang/glog"
 )
 
 var (
@@ -199,16 +201,35 @@ func NewRoute(k int, u int) *Route {
 			slice.units = append(slice.units, unit)
 		}
 	}
-
+	timeoutChan := make(chan *Node, 0)
 	r := &Route{l, k, u, block, new(sync.RWMutex),
-		make(chan *Node, 16)}
-	go r.ServeTimeout()
+		timeoutChan}
+	route = r
+	go route.ServeTimeout()
 	return r
 }
 
 func (r *Route) ServeTimeout() {
-	for n := range r.timeoutNode {
+
+	glog.Infof("ServceTimeout %v v", r)
+	// Node timeout
+	for {
+		n := <-r.timeoutNode
 		log.Printf("Node:%x timeouted", n.ID)
 		r.Delete(n.ID)
+		slice_idx, _ := r.GetIndex(n.ID)
+		slice := r.slices[slice_idx]
+
+		if slice.Leader == nil {
+			glog.Errorf("Missing leader of %x", n.ID)
+			continue
+		}
+
+		if slice.Leader.ID == service.id {
+			// We are leader
+
+		} else {
+
+		}
 	}
 }

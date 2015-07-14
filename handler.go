@@ -49,7 +49,7 @@ func (s *Service) Handle(raddr *net.UDPAddr, msg *Msg) {
 }
 
 // Exchange with other slice leader
-func (s *Service) Exchange(msg *Msg, events []Event) {
+func (s *Service) Exchange(msg *Msg) {
 
 	slice_idx, _ := s.route.GetIndex(msg.From)
 
@@ -77,22 +77,23 @@ func (s *Service) BootStrapReponse(raddr *net.UDPAddr, msg *Msg) {
 		s.route.Add(n)
 	}
 
-	// After add node
-	slice = s.route.slices[slice_idx]
-
 	// we are new leader...tell other slice leader
-	if old_leader == nil {
-
+	if old_leader == nil || slice.Leader.ID == s.id {
+		msg.Type = MESSAGE_EXCHANGE
+		msg.NewID()
+		event := &Event{s.id, time.Now(), JOIN,
+			s.conn.LocalAddr().String()}
+		msg.Events = []Event{*event}
+		s.Exchange(msg)
 	}
 
-	if slice.Leader.ID == s.id {
-
+	if old_leader != nil {
+		//Notify our leader
+		msg.NewID()
+		msg.Type = EVENT_NOTIFICATION
+		msg.From = s.id
+		s.SendMsg(old_leader.Addr, msg)
 	}
-
-	msg.NewID()
-	msg.Type = KEEP_ALIVE
-	msg.From = s.id
-	s.SendMsg(slice.Leader.Addr, msg)
 }
 
 // With bootstrap we should return all slice leaders,
@@ -168,8 +169,9 @@ func (s *Service) KeepAlive(raddr *net.UDPAddr, msg *Msg) {
 	responseMsg.Events = msg.Events
 	responseMsg.Type = KEEP_ALIVE_RESPONSE
 	s.SendMsg(raddr, responseMsg)
-	// Send to successor/predecessor in unit
+
+	// pass msg to successor/predecessor in unit
 	msg.NewID()
 	nn := unit.nodes[i]
-	s.SendTimeoutMsg(nn.Addr, nn.ID, msg)
+	s.SendTimeoutMsg(nn.Addr, msg)
 }
