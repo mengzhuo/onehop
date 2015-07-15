@@ -218,7 +218,7 @@ func (r *Route) ServeTimeout() {
 		slice := r.slices[slice_idx]
 
 		if slice.Leader == nil {
-			glog.Errorf("Missing leader of %x", n.ID)
+			glog.Infof("Missing leader of %x", slice.Max)
 			continue
 		}
 

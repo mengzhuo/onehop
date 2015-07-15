@@ -15,7 +15,7 @@ func (s *Service) checkResponse(id uint32) (existed bool) {
 	defer s.replyLock.Unlock()
 
 	if _, existed = s.requests[id]; !existed {
-		glog.V(3).Infof("Msg ID:%d timeouted/not in list", id)
+		glog.V(3).Infof("Msg ID:%d Type:%d timeouted/not in list", id)
 		return
 	}
 	delete(s.requests, id)
@@ -27,6 +27,11 @@ func (s *Service) Handle(raddr *net.UDPAddr, msg *Msg) {
 	// Main handle function for ALL msg
 	switch msg.Type {
 
+	case BOOTSTRAP:
+		s.BootStrap(raddr, msg)
+	case BOOTSTRAP_RESPONSE:
+		s.BootStrapReponse(raddr, msg)
+
 	case KEEP_ALIVE:
 		s.KeepAlive(raddr, msg)
 	case KEEP_ALIVE_RESPONSE:
@@ -35,16 +40,33 @@ func (s *Service) Handle(raddr *net.UDPAddr, msg *Msg) {
 		}
 		s.route.Refresh(msg.From)
 
-	case BOOTSTRAP:
-		s.BootStrap(raddr, msg)
-	case BOOTSTRAP_RESPONSE:
-		if !s.checkResponse(msg.ID) {
-			return
-		}
-
+	case MESSAGE_EXCHANGE:
+		s.DoMessageExchange(msg)
+	case EVENT_NOTIFICATION:
+		s.DoEventNotification(msg)
 	default:
 		glog.Infof("UnKnown message type %v", msg)
 		return
+	}
+}
+
+func (s *Service) DoEventNotification(msg *Msg) {
+	/*
+		slice_idx, unit_idx := s.route.GetIndex(msg.From)
+		s_idx, u_idx := s.route.GetIndex(s.id)
+	*/
+}
+
+func (s *Service) DoMessageExchange(msg *Msg) {
+
+	slice_idx, _ := s.route.GetIndex(msg.From)
+	self_idx, _ := s.route.GetIndex(s.id)
+	glog.V(7).Infof("DoMessageExchange %x", msg.From)
+	// came from our side
+	if self_idx == slice_idx {
+		s.selfSliceEvents = append(s.selfSliceEvents, msg.Events...)
+	} else {
+		s.outerSliceEvents = append(s.outerSliceEvents, msg.Events...)
 	}
 }
 
@@ -139,30 +161,10 @@ func (s *Service) KeepAlive(raddr *net.UDPAddr, msg *Msg) {
 		}
 	}
 
-	sidx, uidx := s.route.GetIndex(s.id)
-	unit := s.route.slices[sidx].units[uidx]
-
-	i := unit.getID(msg.From)
-	cmp := msg.From.Cmp(s.id)
-
 	msg.From = s.id
-	switch {
-	case cmp == -1 && i > 0:
-		i--
-	case cmp == 1 && (i < unit.Len()-1):
-		i++
-	default:
-		// we are the end of Unit
-		// Response to requester
-		msg.Type = KEEP_ALIVE_RESPONSE
-		msg.Events = nil
-		s.SendMsg(raddr, msg)
-		return
-	}
-
+	// we are the end of Unit
 	// Response to requester
 	responseMsg := s.msgPool.Get()
-	defer s.msgPool.Put(responseMsg)
 
 	responseMsg.ID = msg.ID
 	responseMsg.From = msg.From

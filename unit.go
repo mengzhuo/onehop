@@ -1,9 +1,10 @@
 package onehop
 
 import (
-	"log"
 	"math/big"
 	"sort"
+
+	"github.com/golang/glog"
 )
 
 func NewUnit(min, max *big.Int) *Unit {
@@ -65,7 +66,7 @@ func (u *Unit) add(n *Node) bool {
 		u.updateLeader()
 	}
 
-	log.Printf("Unit %x add %x", u.Max, n.ID)
+	glog.Infof("Unit %x add %x", u.Max, n.ID)
 	return true
 }
 
