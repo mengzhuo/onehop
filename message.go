@@ -38,33 +38,16 @@ type Msg struct {
 	Events []Event  `json:"e,omitempty"`
 }
 
+func NewMsg(typ uint8, f *big.Int, es []Event) *Msg {
+	msg := new(Msg)
+	msg.NewID()
+	msg.Type = typ
+	msg.From = f
+	msg.Events = es
+	return msg
+
+}
+
 func (m *Msg) NewID() {
 	m.ID = rand.Uint32()
-}
-
-type MsgPool struct {
-	freeList chan *Msg
-}
-
-func (p *MsgPool) Get() (m *Msg) {
-	select {
-	case m = <-p.freeList:
-	default:
-		m = new(Msg)
-	}
-	return m
-}
-
-func (p *MsgPool) Put(m *Msg) {
-
-	// Clear all fields for not mess around
-	m.Type = 0x0
-	m.ID = 0
-	m.Events = m.Events[:0]
-	m.From = nil
-
-	select {
-	case p.freeList <- m:
-	default:
-	}
 }

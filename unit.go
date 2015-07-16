@@ -57,16 +57,13 @@ func (u *Unit) add(n *Node) bool {
 		return false
 	}
 
-	if i := u.getID(n.ID); i < u.Len() {
-		u.nodes[i] = n
-
-	} else {
+	if i := u.getID(n.ID); i >= u.Len() {
 		u.nodes = append(u.nodes, n)
 		sort.Sort(u.nodes)
 		u.updateLeader()
+		glog.Infof("Unit %x add %x", u.Max, n.ID)
 	}
 
-	glog.Infof("Unit %x add %x", u.Max, n.ID)
 	return true
 }
 

@@ -2,7 +2,6 @@
 package onehop
 
 import (
-	"log"
 	"math/big"
 	"sync"
 	"time"
@@ -152,7 +151,7 @@ func NewRoute(k int, u int) *Route {
 	if k < 2 || u < 2 {
 		panic("K or U can't not less than 2")
 	}
-	log.Printf("starting route k=%d, u=%d", k, u)
+	glog.Infof("starting route k=%d, u=%d", k, u)
 	block := new(big.Int)
 	block.SetBytes(FullID)
 	block.Div(block, big.NewInt(int64(k*u)))
@@ -199,7 +198,7 @@ func NewRoute(k int, u int) *Route {
 			slice.units = append(slice.units, unit)
 		}
 	}
-	timeoutChan := make(chan *Node, 0)
+	timeoutChan := make(chan *Node, 32)
 	r := &Route{l, k, u, block, new(sync.RWMutex),
 		timeoutChan}
 	route = r
@@ -212,7 +211,8 @@ func (r *Route) ServeTimeout() {
 	// Node timeout
 	for {
 		n := <-r.timeoutNode
-		glog.Infof("Node:%x timeouted", n.ID)
+		n.ticker.Stop()
+		glog.Infof("Node: %x timeouted", n.ID)
 		r.Delete(n.ID)
 		slice_idx, _ := r.GetIndex(n.ID)
 		slice := r.slices[slice_idx]

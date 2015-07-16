@@ -51,32 +51,25 @@ func (s *Service) Handle(raddr *net.UDPAddr, msg *Msg) {
 }
 
 func (s *Service) DoEventNotification(msg *Msg) {
-	/*
-		slice_idx, unit_idx := s.route.GetIndex(msg.From)
-		s_idx, u_idx := s.route.GetIndex(s.id)
-	*/
+	// Any form of notify MUST be deal with in T(min)
+	s.eventNotify = append(s.eventNotify, msg)
 }
 
 func (s *Service) DoMessageExchange(msg *Msg) {
-
-	slice_idx, _ := s.route.GetIndex(msg.From)
-	self_idx, _ := s.route.GetIndex(s.id)
-	glog.V(7).Infof("DoMessageExchange %x", msg.From)
-	// came from our side
-	if self_idx == slice_idx {
-		s.selfSliceEvents = append(s.selfSliceEvents, msg.Events...)
-	} else {
-		s.outerSliceEvents = append(s.outerSliceEvents, msg.Events...)
-	}
+	s.exchangeMsg = append(s.exchangeMsg, msg)
 }
 
 // Exchange with other slice leader
 func (s *Service) Exchange(msg *Msg) {
 
-	slice_idx, _ := s.route.GetIndex(msg.From)
+	saddr := s.conn.LocalAddr().String()
 
-	for i, slice := range s.route.slices {
-		if slice.Leader == nil || slice_idx == i {
+	for _, slice := range s.route.slices {
+
+		if slice.Leader == nil {
+			continue
+		}
+		if slice.Leader.Addr.String() == saddr {
 			continue
 		}
 		s.SendMsg(slice.Leader.Addr, msg)
@@ -97,13 +90,14 @@ func (s *Service) BootStrapReponse(raddr *net.UDPAddr, msg *Msg) {
 	for _, rn := range msg.Events {
 		n := rn.ToNode()
 		s.route.Add(n)
+		n.resetTimer()
 	}
 
 	// we are new leader...tell other slice leader
 	if old_leader == nil || slice.Leader.ID == s.id {
 		msg.Type = MESSAGE_EXCHANGE
 		msg.NewID()
-		event := &Event{s.id, time.Now(), JOIN,
+		event := &Event{s.ID(), time.Now(), JOIN,
 			s.conn.LocalAddr().String()}
 		msg.Events = []Event{*event}
 		s.Exchange(msg)
@@ -113,7 +107,6 @@ func (s *Service) BootStrapReponse(raddr *net.UDPAddr, msg *Msg) {
 		//Notify our leader
 		msg.NewID()
 		msg.Type = EVENT_NOTIFICATION
-		msg.From = s.id
 		s.SendMsg(old_leader.Addr, msg)
 	}
 }
@@ -122,6 +115,7 @@ func (s *Service) BootStrapReponse(raddr *net.UDPAddr, msg *Msg) {
 // Let requester decide which leader should talk to by
 // itself
 func (s *Service) BootStrap(raddr *net.UDPAddr, msg *Msg) {
+
 	events := make([]Event, 0)
 	for _, s := range s.route.slices {
 		if s.Leader == nil {
@@ -132,9 +126,30 @@ func (s *Service) BootStrap(raddr *net.UDPAddr, msg *Msg) {
 		events = append(events, *e)
 	}
 	msg.Events = events
-	msg.From = s.id
+	msg.From = s.ID()
 	msg.Type = BOOTSTRAP_RESPONSE
 	s.SendMsg(raddr, msg)
+}
+
+func (s *Service) handleEvents(msg *Msg) {
+
+	for _, e := range msg.Events {
+
+		if e.Time.Add(EVENT_TIMEOUT).Before(time.Now()) {
+			glog.Infof("Recv timeouted event:%v", e)
+			continue
+		}
+		switch e.Status {
+		case JOIN:
+			if n := s.route.GetNode(e.ID); n != nil {
+				n.updateAt = time.Now()
+			}
+			s.route.Add(e.ToNode())
+		case LEAVE:
+			s.route.Delete(e.ID)
+		}
+	}
+
 }
 
 func (s *Service) KeepAlive(raddr *net.UDPAddr, msg *Msg) {
@@ -145,36 +160,32 @@ func (s *Service) KeepAlive(raddr *net.UDPAddr, msg *Msg) {
 		n = &Node{ID: msg.From, Addr: raddr, updateAt: time.Now()}
 	}
 	s.route.Add(n)
+	s.route.Refresh(n.ID)
 
-	for _, rn := range msg.Events {
+	_, unit := s.getMySliceUnit()
+	idx := unit.getID(s.id)
+	// how can we pass msg on next node?
+	cmp := msg.From.Cmp(s.id)
 
-		if rn.Time.Add(EVENT_TIMEOUT).Before(time.Now()) {
-			glog.Infof("Recv timeouted event:%v", rn)
-			continue
-		}
-		n := rn.ToNode()
-		switch rn.Status {
-		case JOIN:
-			s.route.Add(n)
-		case LEAVE:
-			s.route.Delete(n.ID)
-		}
+	var next *Node
+	switch {
+	case cmp == -1 && idx+1 < unit.Len():
+		next = unit.nodes[idx+1]
+	case cmp == 1 && idx > 0:
+		// msg bigger than us msg to smaller node
+		next = unit.nodes[idx-1]
 	}
+	msg.From = s.ID()
+	msg.NewID()
+	s.SendTimeoutMsg(next.Addr, next, msg)
 
-	msg.From = s.id
-	// we are the end of Unit
 	// Response to requester
-	responseMsg := s.msgPool.Get()
-
+	responseMsg := new(Msg)
 	responseMsg.ID = msg.ID
 	responseMsg.From = msg.From
 	responseMsg.Events = msg.Events
 	responseMsg.Type = KEEP_ALIVE_RESPONSE
+
 	s.SendMsg(raddr, responseMsg)
 
-	// pass msg to successor/predecessor in unit
-	msg.NewID()
-	nn := unit.nodes[i]
-	s.route.Refresh(nn.ID)
-	s.SendTimeoutMsg(nn.Addr, msg)
 }
