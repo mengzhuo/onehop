@@ -53,10 +53,30 @@ func (s *Service) Handle(raddr *net.UDPAddr, msg *Msg) {
 func (s *Service) DoEventNotification(msg *Msg) {
 	// Any form of notify MUST be deal with in T(min)
 	s.eventNotify = append(s.eventNotify, msg)
+	if msg.Events == nil {
+		// This node is take over our leadership
+		slice, unit := s.getMySliceUnit()
+		s.tick(slice, unit)
+
+		// We don't need to care other slices now
+		for _, slice := range s.route.slices {
+			if slice.Leader != nil {
+				slice.Leader.ticker.Stop()
+			}
+		}
+	}
 }
 
 func (s *Service) DoMessageExchange(msg *Msg) {
 	s.exchangeMsg = append(s.exchangeMsg, msg)
+	for _, e := range msg.Events {
+		n := s.route.GetNode(e.ID)
+		if n == nil {
+			n = e.ToNode()
+			s.route.Add(n)
+		}
+		n.updateAt = time.Now()
+	}
 }
 
 // Exchange with other slice leader
@@ -83,18 +103,27 @@ func (s *Service) BootStrapReponse(raddr *net.UDPAddr, msg *Msg) {
 
 	// Try with old slice leader
 	slice_idx, _ := s.route.GetIndex(s.id)
-	slice := s.route.slices[slice_idx]
-
-	old_leader := slice.Leader
-
+	old_leader := false
 	for _, rn := range msg.Events {
 		n := rn.ToNode()
 		s.route.Add(n)
+		glog.Infof("E%#v", n)
+		nslice_idx, _ := s.route.GetIndex(n.ID)
+		if nslice_idx == slice_idx {
+
+			msg.NewID()
+			msg.Type = EVENT_NOTIFICATION
+			msg.Events = nil
+			msg.From = s.ID()
+			s.SendMsg(n.Addr, msg)
+			old_leader = true
+		}
 		n.resetTimer()
 	}
 
 	// we are new leader...tell other slice leader
-	if old_leader == nil || slice.Leader.ID == s.id {
+	if !old_leader {
+		glog.V(2).Infof("%x are new leader ", s.id)
 		msg.Type = MESSAGE_EXCHANGE
 		msg.NewID()
 		event := &Event{s.ID(), time.Now(), JOIN,
@@ -103,12 +132,6 @@ func (s *Service) BootStrapReponse(raddr *net.UDPAddr, msg *Msg) {
 		s.Exchange(msg)
 	}
 
-	if old_leader != nil {
-		//Notify our leader
-		msg.NewID()
-		msg.Type = EVENT_NOTIFICATION
-		s.SendMsg(old_leader.Addr, msg)
-	}
 }
 
 // With bootstrap we should return all slice leaders,
@@ -164,6 +187,16 @@ func (s *Service) KeepAlive(raddr *net.UDPAddr, msg *Msg) {
 
 	_, unit := s.getMySliceUnit()
 	idx := unit.getID(s.id)
+
+	// Response to requester
+	responseMsg := new(Msg)
+	responseMsg.ID = msg.ID
+	responseMsg.From = msg.From
+	responseMsg.Events = msg.Events
+	responseMsg.Type = KEEP_ALIVE_RESPONSE
+
+	s.SendMsg(raddr, responseMsg)
+
 	// how can we pass msg on next node?
 	cmp := msg.From.Cmp(s.id)
 
@@ -175,17 +208,9 @@ func (s *Service) KeepAlive(raddr *net.UDPAddr, msg *Msg) {
 		// msg bigger than us msg to smaller node
 		next = unit.nodes[idx-1]
 	}
+
 	msg.From = s.ID()
 	msg.NewID()
 	s.SendTimeoutMsg(next.Addr, next, msg)
-
-	// Response to requester
-	responseMsg := new(Msg)
-	responseMsg.ID = msg.ID
-	responseMsg.From = msg.From
-	responseMsg.Events = msg.Events
-	responseMsg.Type = KEEP_ALIVE_RESPONSE
-
-	s.SendMsg(raddr, responseMsg)
 
 }

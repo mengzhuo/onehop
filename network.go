@@ -94,15 +94,7 @@ func NewService(netType, address string, k, u int) *Service {
 	glog.Infof("initial id:%x", id)
 
 	n := &Node{ID: id, Addr: listener.LocalAddr().(*net.UDPAddr)}
-	// route.Add(n)
-	slice_idx, unit_idx := route.GetIndex(n.ID)
-	slice := route.slices[slice_idx]
-	unit := slice.units[unit_idx]
-	result := unit.add(n)
-	if !result {
-		glog.Fatalf("Can not initialize node:%v", n)
-	}
-	slice.updateLeader()
+	route.Add(n)
 
 	requests := make(map[uint32]*Msg, 0)
 	requestTimeout := make(chan uint32, 1024)
@@ -168,56 +160,68 @@ func (s *Service) MsgToEvents(msgs []*Msg) []Event {
 }
 
 func (s *Service) Tick() {
-
 	slice, unit := s.getMySliceUnit()
 	for _ = range s.Ticker.C {
-
-		if s.IAmSliceLeader() {
-			// We are slice leader
-			// put all event_notify to unit leader
-			// And exchange with other slice leader
-			emsg := NewMsg(MESSAGE_EXCHANGE, s.ID(),
-				s.MsgToEvents(s.eventNotify))
-			s.Exchange(emsg)
-
-			emsg.Events = append(emsg.Events, s.MsgToEvents(s.exchangeMsg)...)
-			msg := NewMsg(EVENT_NOTIFICATION,
-				s.ID(), emsg.Events)
-
-			for _, u := range slice.units {
-				if u.Leader == nil {
-					continue
-				}
-				if u.Leader.ID.Cmp(s.id) == 0 {
-					continue
-				}
-				s.SendTimeoutMsg(u.Leader.Addr, u.Leader, msg)
-			}
-		}
-
-		if s.IAmUnitLeader() {
-			// We are unit leader, put event_notify to nodes
-			// which are near to us in our realm
-			// After that notify our slice leader
-			kmsg := NewMsg(KEEP_ALIVE, s.ID(),
-				s.MsgToEvents(s.eventNotify))
-			i := unit.getID(s.id)
-
-			if i > 0 {
-				n := unit.nodes[i-1]
-				s.SendTimeoutMsg(n.Addr, n, kmsg)
-			}
-			if i+1 < unit.Len() {
-				n := unit.nodes[i+1]
-				s.SendTimeoutMsg(n.Addr, n, kmsg)
-			}
-		}
-
-		// Reset all events
-		s.exchangeMsg = s.exchangeMsg[:0]
-		s.keepAlive = s.keepAlive[:0]
-		s.eventNotify = s.eventNotify[:0]
+		s.tick(slice, unit)
 	}
+
+}
+
+func (s *Service) tick(slice *Slice, unit *Unit) {
+
+	if s.IAmSliceLeader() {
+		// We are slice leader
+		// put all event_notify to unit leader
+		// And exchange with other slice leader
+		emsg := NewMsg(MESSAGE_EXCHANGE, s.ID(),
+			s.MsgToEvents(s.eventNotify))
+		emsg.Events = append(emsg.Events,
+			Event{s.id, time.Now(), JOIN, s.conn.LocalAddr().String()})
+		s.Exchange(emsg)
+
+		emsg.Events = append(emsg.Events, s.MsgToEvents(s.exchangeMsg)...)
+		msg := NewMsg(EVENT_NOTIFICATION,
+			s.ID(), emsg.Events)
+
+		for _, u := range slice.units {
+			if u.Leader == nil {
+				continue
+			}
+			if u.Leader.ID.Cmp(s.id) == 0 {
+				continue
+			}
+			s.SendTimeoutMsg(u.Leader.Addr, u.Leader, msg)
+		}
+	}
+
+	if s.IAmUnitLeader() {
+		// We are unit leader, put event_notify to nodes
+		// which are near to us in our realm
+		// After that notify our slice leader
+		kmsg := NewMsg(KEEP_ALIVE, s.ID(),
+			s.MsgToEvents(s.eventNotify))
+		i := unit.getID(s.id)
+
+		if i > 0 {
+			n := unit.nodes[i-1]
+			s.SendTimeoutMsg(n.Addr, n, kmsg)
+		}
+		if i+1 < unit.Len() {
+			n := unit.nodes[i+1]
+			s.SendTimeoutMsg(n.Addr, n, kmsg)
+		}
+		if slice.Leader.ID.Cmp(s.id) != 0 {
+			es := []Event{Event{s.ID(), time.Now(), JOIN, s.conn.LocalAddr().String()}}
+			nmsg := NewMsg(EVENT_NOTIFICATION, s.ID(), es)
+			s.SendTimeoutMsg(slice.Leader.Addr, slice.Leader, nmsg)
+		}
+
+	}
+
+	// Reset all events
+	s.exchangeMsg = s.exchangeMsg[:0]
+	s.keepAlive = s.keepAlive[:0]
+	s.eventNotify = s.eventNotify[:0]
 }
 
 func (s *Service) Listen() {
@@ -235,7 +239,9 @@ func (s *Service) Listen() {
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
-					glog.ErrorDepth(2, r)
+					for i := 0; i < 10; i++ {
+						glog.ErrorDepth(i, r)
+					}
 				}
 			}()
 			msg := new(Msg)
@@ -252,8 +258,7 @@ func (s *Service) Listen() {
 func (s *Service) Send(dstAddr *net.UDPAddr, p []byte) {
 	defer func() {
 		if r := recover(); r != nil {
-			glog.ErrorDepth(2, r)
-
+			glog.ErrorDepth(0, r)
 		}
 	}()
 
@@ -282,7 +287,7 @@ func (s *Service) SendTimeoutMsg(dstAddr *net.UDPAddr, rect *Node, msg *Msg) {
 		s.replyLock.Lock()
 		defer s.replyLock.Unlock()
 		if _, ok := s.requests[id]; ok {
-			glog.Infof("Msg %x timeouted", msg.ID)
+			glog.Infof("Msg %x timeouted %#v", msg.ID, msg)
 			s.NotifySliceLeader(msg, rect, LEAVE)
 			delete(s.requests, id)
 		}
@@ -299,10 +304,11 @@ func (s *Service) NotifySliceLeader(msg *Msg, n *Node, status byte) {
 	if slice.Leader == nil {
 		glog.Errorf("Something is wrong!!! we are in the slice however there is no slice leader?")
 	}
-	e := Event{n.ID, time.Now(), status, n.Addr.String()}
-	if slice.Leader.Addr.String() == s.conn.LocalAddr().String() {
-		glog.V(4).Info("we are leader")
+
+	if slice.Leader.ID.Cmp(s.id) == 0 {
+		glog.V(4).Info("we are leader?!")
 	}
+	e := Event{n.ID, time.Now(), status, n.Addr.String()}
 
 	notify := new(Msg)
 	notify.NewID()
