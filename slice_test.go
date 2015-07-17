@@ -1,32 +1,21 @@
 package onehop
 
-import "math/big"
+import (
+	"math/big"
+	"testing"
+)
 
-func NewSlice() *Slice {
+func newSlice() *Slice {
+	s := NewRoute(2)
+	AddRouteNode(s)
+	return s.slices[0]
 
-	block := big.NewInt(int64(64))
+}
 
-	slice := new(Slice)
-	slice.Max = new(big.Int)
-	slice.Min = new(big.Int)
-	slice.Min.Add(block, slice.Min)
-	slice.Max.Mul(block, big.NewInt(int64(8)))
-	slice.Max.Add(slice.Max, slice.Min)
-	slice.units = make([]*Unit, 0)
-
-	for j := int64(0); j < int64(8); j++ {
-		// Sorted units
-		unit := new(Unit)
-		unit.Min = new(big.Int)
-		unit.Max = new(big.Int)
-
-		unit.Min.Mul(block, big.NewInt(j))
-		unit.Min.Add(unit.Min, slice.Min)
-
-		unit.Max.Add(unit.Min, block)
-
-		slice.units = append(slice.units, unit)
+func TestSliceAdd(t *testing.T) {
+	s := newSlice()
+	n := s.Get(big.NewInt(int64(8)))
+	if n == nil {
+		t.Errorf("Get error")
 	}
-
-	return slice
 }

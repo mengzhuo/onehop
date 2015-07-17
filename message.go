@@ -1,6 +1,7 @@
 package onehop
 
 import (
+	"fmt"
 	"math/big"
 	"math/rand"
 )
@@ -36,6 +37,12 @@ type Msg struct {
 	Type   uint8    `json:"t"`
 	From   *big.Int `json:"f"` // ID of remote node
 	Events []Event  `json:"e,omitempty"`
+}
+
+func (m *Msg) String() string {
+	return fmt.Sprintf("Msg:%d,Type:%x, From:%x, Events:%s",
+		m.ID, m.Type, m.From, m.Events)
+
 }
 
 func NewMsg(typ uint8, f *big.Int, es []Event) *Msg {

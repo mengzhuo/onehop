@@ -75,7 +75,7 @@ func (b *BytePool) Put(p []byte) {
 
 // NetType, Address for UDP connection
 // k, u for OneHop slice number and unit number
-func NewService(netType, address string, k, u int) *Service {
+func NewService(netType, address string, k int) *Service {
 
 	listener, err := newListener(netType, address)
 	if err != nil {
@@ -83,7 +83,7 @@ func NewService(netType, address string, k, u int) *Service {
 	}
 
 	glog.Infof("Listening to :%s %s", netType, address)
-	route = NewRoute(k, u)
+	route = NewRoute(k)
 	bp := &BytePool{make(chan []byte, 1024), 8192}
 	max := new(big.Int).SetBytes(FullID)
 
@@ -107,6 +107,8 @@ func NewService(netType, address string, k, u int) *Service {
 		make([]*Msg, 0), make([]*Msg, 0), make([]*Msg, 0)}
 
 	go service.Tick()
+	slice := service.getMySlice()
+	go route.ServeTimeout(slice)
 	return service
 }
 
@@ -116,30 +118,11 @@ func (s *Service) ID() *big.Int {
 
 func (s *Service) IAmSliceLeader() (answer bool) {
 
-	slice_idx, _ := s.route.GetIndex(s.id)
+	slice_idx := s.route.GetIndex(s.id)
 	slice := s.route.slices[slice_idx]
 	if slice.Leader != nil && slice.Leader.ID.Cmp(s.id) == 0 {
 		answer = true
 	}
-	return
-}
-func (s *Service) IAmUnitLeader() (answer bool) {
-
-	slice_idx, unit_idx := s.route.GetIndex(s.id)
-	slice := s.route.slices[slice_idx]
-	unit := slice.units[unit_idx]
-
-	if unit.Leader != nil && unit.Leader.ID.Cmp(s.id) == 0 {
-		answer = true
-	}
-
-	return
-}
-
-func (s *Service) getMySliceUnit() (slice *Slice, unit *Unit) {
-	slice_idx, unit_idx := s.route.GetIndex(s.id)
-	slice = s.route.slices[slice_idx]
-	unit = slice.units[unit_idx]
 	return
 }
 
@@ -159,15 +142,21 @@ func (s *Service) MsgToEvents(msgs []*Msg) []Event {
 	return es
 }
 
+func (s *Service) getMySlice() (slice *Slice) {
+
+	slice = s.route.slices[s.route.GetIndex(s.id)]
+	return
+}
+
 func (s *Service) Tick() {
-	slice, unit := s.getMySliceUnit()
+	slice := s.getMySlice()
 	for _ = range s.Ticker.C {
-		s.tick(slice, unit)
+		s.tick(slice)
 	}
 
 }
 
-func (s *Service) tick(slice *Slice, unit *Unit) {
+func (s *Service) tick(slice *Slice) {
 
 	if s.IAmSliceLeader() {
 		// We are slice leader
@@ -180,40 +169,16 @@ func (s *Service) tick(slice *Slice, unit *Unit) {
 		s.Exchange(emsg)
 
 		emsg.Events = append(emsg.Events, s.MsgToEvents(s.exchangeMsg)...)
-		msg := NewMsg(EVENT_NOTIFICATION,
+		msg := NewMsg(KEEP_ALIVE,
 			s.ID(), emsg.Events)
 
-		for _, u := range slice.units {
-			if u.Leader == nil {
-				continue
-			}
-			if u.Leader.ID.Cmp(s.id) == 0 {
-				continue
-			}
-			s.SendTimeoutMsg(u.Leader.Addr, u.Leader, msg)
+		n := slice.successorOf(s.id)
+		if n != nil {
+			s.SendTimeoutMsg(n.Addr, n, msg)
 		}
-	}
-
-	if s.IAmUnitLeader() {
-		// We are unit leader, put event_notify to nodes
-		// which are near to us in our realm
-		// After that notify our slice leader
-		kmsg := NewMsg(KEEP_ALIVE, s.ID(),
-			s.MsgToEvents(s.eventNotify))
-		i := unit.getID(s.id)
-
-		if i > 0 {
-			n := unit.nodes[i-1]
-			s.SendTimeoutMsg(n.Addr, n, kmsg)
-		}
-		if i+1 < unit.Len() {
-			n := unit.nodes[i+1]
-			s.SendTimeoutMsg(n.Addr, n, kmsg)
-		}
-		if slice.Leader.ID.Cmp(s.id) != 0 {
-			es := []Event{Event{s.ID(), time.Now(), JOIN, s.conn.LocalAddr().String()}}
-			nmsg := NewMsg(EVENT_NOTIFICATION, s.ID(), es)
-			s.SendTimeoutMsg(slice.Leader.Addr, slice.Leader, nmsg)
+		pn := slice.predecessorOf(s.id)
+		if pn != nil {
+			s.SendTimeoutMsg(pn.Addr, pn, msg)
 		}
 
 	}
@@ -237,19 +202,12 @@ func (s *Service) Listen() {
 		}
 
 		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					for i := 0; i < 10; i++ {
-						glog.ErrorDepth(i, r)
-					}
-				}
-			}()
 			msg := new(Msg)
-
 			err := json.Unmarshal(p[:n], msg)
 			if err != nil {
 				panic(err)
 			}
+			glog.V(10).Infof("Recv From:%x TYPE:%x", msg.From, msg.Type)
 			s.Handle(addr, msg)
 		}()
 	}
@@ -261,7 +219,9 @@ func (s *Service) Send(dstAddr *net.UDPAddr, p []byte) {
 			glog.ErrorDepth(0, r)
 		}
 	}()
-
+	if dstAddr == s.conn.LocalAddr() {
+		return
+	}
 	s.conn.WriteToUDP(p, dstAddr)
 }
 
@@ -297,9 +257,7 @@ func (s *Service) SendTimeoutMsg(dstAddr *net.UDPAddr, rect *Node, msg *Msg) {
 
 func (s *Service) NotifySliceLeader(msg *Msg, n *Node, status byte) {
 
-	slice_idx, _ := s.route.GetIndex(s.id)
-
-	slice := s.route.slices[slice_idx]
+	slice := s.getMySlice()
 
 	if slice.Leader == nil {
 		glog.Errorf("Something is wrong!!! we are in the slice however there is no slice leader?")
@@ -315,5 +273,5 @@ func (s *Service) NotifySliceLeader(msg *Msg, n *Node, status byte) {
 	notify.Type = EVENT_NOTIFICATION
 	notify.Events = append(notify.Events, e)
 	notify.From = s.ID()
-	s.SendTimeoutMsg(slice.Leader.Addr, slice.Leader, notify)
+	s.SendMsg(slice.Leader.Addr, notify)
 }
