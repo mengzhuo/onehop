@@ -3,7 +3,6 @@ package onehop
 
 import (
 	"math/big"
-	"sync"
 	"time"
 
 	"github.com/golang/glog"
@@ -17,13 +16,13 @@ var (
 	zeroID = big.NewInt(int64(0))
 )
 
-const NODE_TIMEOUT = 10 * time.Second
+const NODE_TIMEOUT = 9 * time.Second
 
 type Route struct {
-	slices []*Slice
-	k      int // number of slices the ring is divided into
-	block  *big.Int
-	mu     *sync.RWMutex
+	slices      []*Slice
+	k           int // number of slices the ring is divided into
+	block       *big.Int
+	timeOutNode chan *Node
 }
 
 func (r *Route) Len() int {
@@ -40,9 +39,6 @@ func (r *Route) GetIndex(id *big.Int) (sliceidx int) {
 }
 
 func (r *Route) GetNode(id *big.Int) (n *Node) {
-
-	r.mu.RLock()
-	defer r.mu.RUnlock()
 
 	slice_idx := r.GetIndex(id)
 	slice := r.slices[slice_idx]
@@ -82,8 +78,6 @@ func (r *Route) SuccessorOf(id *big.Int) (n *Node) {
 
 func (r *Route) Add(n *Node) (ok bool) {
 
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	slice_idx := r.GetIndex(n.ID)
 	slice := r.slices[slice_idx]
 
@@ -94,13 +88,11 @@ func (r *Route) Add(n *Node) (ok bool) {
 }
 func (r *Route) Delete(id *big.Int) (ok bool) {
 
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	slice_idx := r.GetIndex(id)
 	slice := r.slices[slice_idx]
 
 	result := slice.Delete(id)
+	slice.updateLeader()
 	return result
 }
 
@@ -137,7 +129,8 @@ func NewRoute(k int) *Route {
 
 		l = append(l, slice)
 	}
-	r := &Route{l, k, block, new(sync.RWMutex)}
+	timeOutNode := make(chan *Node, 16)
+	r := &Route{l, k, block, timeOutNode}
 	route = r
 	return r
 }
@@ -155,19 +148,9 @@ func (r *Route) ServeTimeout(self *Slice) {
 		<-ticker.C
 		for _, s := range other {
 			if s.Leader != nil &&
-				s.Leader.updateAt.Add(NODE_TIMEOUT).Before(time.Now()) {
+				s.Leader.updateAt.Add(3*time.Second).Before(time.Now()) {
 				glog.Errorf("Slice Leader Node %x timeout", s.Leader.ID)
 				r.Delete(s.Leader.ID)
-			}
-		}
-		for _, n := range self.nodes {
-			if n.ID.String() == service.id.String() {
-				continue
-			}
-
-			if n.updateAt.Add(NODE_TIMEOUT).Before(time.Now()) {
-				glog.Errorf("Node %x timeout", n.ID)
-				r.Delete(n.ID)
 			}
 		}
 	}

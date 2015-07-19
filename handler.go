@@ -7,20 +7,7 @@ import (
 	"github.com/golang/glog"
 )
 
-const EVENT_TIMEOUT = 3 * time.Second
-
-func (s *Service) checkResponse(id uint32) (existed bool) {
-
-	s.replyLock.Lock()
-	defer s.replyLock.Unlock()
-
-	if _, existed = s.requests[id]; !existed {
-		glog.V(3).Infof("Msg ID:%d Type:%d timeouted/not in list", id)
-		return
-	}
-	delete(s.requests, id)
-	return existed
-}
+const EVENT_TIMEOUT = 5 * time.Second
 
 func (s *Service) Handle(raddr *net.UDPAddr, msg *Msg) {
 
@@ -35,9 +22,6 @@ func (s *Service) Handle(raddr *net.UDPAddr, msg *Msg) {
 	case KEEP_ALIVE:
 		s.KeepAlive(raddr, msg)
 	case KEEP_ALIVE_RESPONSE:
-		if !s.checkResponse(msg.ID) {
-			return
-		}
 		n := s.route.GetNode(msg.From)
 		if n != nil {
 			n.updateAt = time.Now()
@@ -47,6 +31,11 @@ func (s *Service) Handle(raddr *net.UDPAddr, msg *Msg) {
 		s.DoMessageExchange(raddr, msg)
 	case EVENT_NOTIFICATION:
 		s.DoEventNotification(raddr, msg)
+	case REPLICATE:
+
+		s.Replicate(raddr, msg)
+	case REPLICATE_RESPONSE:
+		s.ReplicateResponse(raddr, msg)
 	default:
 		glog.Infof("UnKnown message type %v", msg)
 		return
@@ -86,7 +75,7 @@ func (s *Service) Exchange(msg *Msg) {
 		if slice.Leader == nil {
 			continue
 		}
-		if slice.Leader.ID.Cmp(s.id) == 0 {
+		if slice == s.selfSlice {
 			// It's ourself
 			continue
 		}
@@ -131,6 +120,7 @@ func (s *Service) BootStrapReponse(raddr *net.UDPAddr, msg *Msg) {
 		}
 		glog.V(3).Infof("Send Event %s", nmsg)
 		s.SendMsg(n.Addr, nmsg)
+
 	}
 
 	// we are new leader...tell other slice leader
@@ -143,7 +133,6 @@ func (s *Service) BootStrapReponse(raddr *net.UDPAddr, msg *Msg) {
 		msg.Events = []Event{*event}
 		s.Exchange(msg)
 	}
-
 }
 
 // With bootstrap we should return all slice leaders,
@@ -156,9 +145,10 @@ func (s *Service) BootStrap(raddr *net.UDPAddr, msg *Msg) {
 		if s.Leader == nil {
 			continue
 		}
-		n := s.Leader
-		e := &Event{n.ID, time.Now(), JOIN, n.Addr.String()}
-		events = append(events, *e)
+		for _, n := range s.nodes {
+			e := &Event{n.ID, time.Now(), JOIN, n.Addr.String()}
+			events = append(events, *e)
+		}
 	}
 	msg.Events = events
 	msg.From = s.ID()
@@ -196,9 +186,38 @@ func (s *Service) handleEvents(msg *Msg) {
 
 }
 
+func (s *Service) Replicate(raddr *net.UDPAddr, msg *Msg) {
+
+	glog.V(4).Infof("Recv Replicate:%s", msg)
+
+	events := make([]Event, 0)
+
+	for _, slice := range s.route.slices {
+
+		for _, node := range slice.nodes {
+			e := Event{node.ID, time.Now(), JOIN, node.Addr.String()}
+			events = append(events, e)
+		}
+	}
+
+	for i := 100; i < len(events); i += 100 {
+		msg.Events = events[i-100 : i]
+		msg.Type = REPLICATE_RESPONSE
+		msg.From = s.ID()
+		glog.V(9).Infof("Send replicate %s", msg)
+		s.SendMsg(raddr, msg)
+	}
+}
+
+func (s *Service) ReplicateResponse(raddr *net.UDPAddr, msg *Msg) {
+	// we don't need to reponse with this
+	glog.V(4).Infof("Recv Replicate Response:%s", msg)
+	s.handleEvents(msg)
+}
+
 func (s *Service) KeepAlive(raddr *net.UDPAddr, msg *Msg) {
 
-	glog.V(4).Infof("KeepAlive Msg:%v", msg)
+	glog.V(4).Infof("KeepAlive Msg From:%x", msg.From)
 	n := s.route.GetNode(msg.From)
 	if n == nil {
 		n = &Node{ID: msg.From, Addr: raddr, updateAt: time.Now()}
@@ -218,6 +237,7 @@ func (s *Service) KeepAlive(raddr *net.UDPAddr, msg *Msg) {
 	responseMsg.Events = msg.Events
 	responseMsg.Type = KEEP_ALIVE_RESPONSE
 
+	s.pinger = n
 	s.SendMsg(raddr, responseMsg)
 
 	// how can we pass msg on next node?
@@ -230,9 +250,12 @@ func (s *Service) KeepAlive(raddr *net.UDPAddr, msg *Msg) {
 	case cmp == 1 && idx > 0:
 		// msg bigger than us msg to smaller node
 		next = slice.nodes[idx-1]
+	default:
+		// Nothin to pass on
+		return
 	}
 	if next != nil {
 		msg.From = s.ID()
-		s.SendTimeoutMsg(next.Addr, next, msg)
+		s.SendMsg(next.Addr, msg)
 	}
 }

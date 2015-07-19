@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"math/big"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/golang/glog"
@@ -39,15 +38,13 @@ type Service struct {
 	bytePool *BytePool
 	id       *big.Int
 
-	requests       map[uint32]*Msg
-	requestTimeout chan uint32
-	replyLock      *sync.RWMutex
-
 	Ticker *time.Ticker
 
 	exchangeMsg []*Msg
 	eventNotify []*Msg
-	keepAlive   []*Msg
+
+	selfSlice *Slice
+	pinger    *Node
 }
 
 type BytePool struct {
@@ -96,18 +93,14 @@ func NewService(netType, address string, k int) *Service {
 	n := &Node{ID: id, Addr: listener.LocalAddr().(*net.UDPAddr)}
 	route.Add(n)
 
-	requests := make(map[uint32]*Msg, 0)
-	requestTimeout := make(chan uint32, 1024)
-
-	eventTicker := time.NewTicker(1 * time.Second)
+	eventTicker := time.NewTicker(3 * time.Second)
+	slice := route.slices[route.GetIndex(id)]
 
 	service = &Service{listener, route, bp, id,
-		requests, requestTimeout, &sync.RWMutex{},
 		eventTicker,
-		make([]*Msg, 0), make([]*Msg, 0), make([]*Msg, 0)}
+		make([]*Msg, 0), make([]*Msg, 0), slice, n}
 
 	go service.Tick()
-	slice := service.getMySlice()
 	go route.ServeTimeout(slice)
 	return service
 }
@@ -118,9 +111,7 @@ func (s *Service) ID() *big.Int {
 
 func (s *Service) IAmSliceLeader() (answer bool) {
 
-	slice_idx := s.route.GetIndex(s.id)
-	slice := s.route.slices[slice_idx]
-	if slice.Leader != nil && slice.Leader.ID.Cmp(s.id) == 0 {
+	if s.selfSlice.Leader != nil && s.selfSlice.Leader.ID.Cmp(s.id) == 0 {
 		answer = true
 	}
 	return
@@ -150,8 +141,13 @@ func (s *Service) getMySlice() (slice *Slice) {
 
 func (s *Service) Tick() {
 	slice := s.getMySlice()
-	for _ = range s.Ticker.C {
-		s.tick(slice)
+	for {
+		select {
+		case _ = <-s.Ticker.C:
+			s.tick(slice)
+		case n := <-s.route.timeOutNode:
+			s.NotifySliceLeader(n, LEAVE)
+		}
 	}
 
 }
@@ -174,18 +170,25 @@ func (s *Service) tick(slice *Slice) {
 
 		n := slice.successorOf(s.id)
 		if n != nil {
-			s.SendTimeoutMsg(n.Addr, n, msg)
+			s.SendMsg(n.Addr, msg)
 		}
 		pn := slice.predecessorOf(s.id)
 		if pn != nil {
-			s.SendTimeoutMsg(pn.Addr, pn, msg)
+			s.SendMsg(pn.Addr, msg)
 		}
 
 	}
 
+	if s.pinger != nil && s.pinger.Addr != s.conn.LocalAddr() {
+		if s.pinger.updateAt.Add(NODE_TIMEOUT).Before(time.Now()) {
+			// Timeouted
+			s.route.Delete(s.pinger.ID)
+			s.NotifySliceLeader(s.pinger, LEAVE)
+		}
+	}
+
 	// Reset all events
 	s.exchangeMsg = s.exchangeMsg[:0]
-	s.keepAlive = s.keepAlive[:0]
 	s.eventNotify = s.eventNotify[:0]
 }
 
@@ -201,15 +204,14 @@ func (s *Service) Listen() {
 			continue
 		}
 
-		go func() {
-			msg := new(Msg)
-			err := json.Unmarshal(p[:n], msg)
-			if err != nil {
-				panic(err)
-			}
-			glog.V(10).Infof("Recv From:%x TYPE:%x", msg.From, msg.Type)
-			s.Handle(addr, msg)
-		}()
+		msg := new(Msg)
+		err = json.Unmarshal(p[:n], msg)
+		if err != nil {
+			panic(err)
+		}
+		glog.V(10).Infof("Recv From:%x TYPE:%x", msg.From, msg.Type)
+		s.Handle(addr, msg)
+		s.bytePool.Put(p)
 	}
 }
 
@@ -235,43 +237,29 @@ func (s *Service) SendMsg(dstAddr *net.UDPAddr, msg *Msg) {
 	s.Send(dstAddr, p)
 }
 
-func (s *Service) SendTimeoutMsg(dstAddr *net.UDPAddr, rect *Node, msg *Msg) {
-
-	// it should not be any other msg id in here
-	s.replyLock.Lock()
-	defer s.replyLock.Unlock()
-	s.requests[msg.ID] = msg
-	id := msg.ID
-
-	time.AfterFunc(NODE_TIMEOUT, func() {
-		s.replyLock.Lock()
-		defer s.replyLock.Unlock()
-		if _, ok := s.requests[id]; ok {
-			glog.Infof("Msg %x timeouted %#v", msg.ID, msg)
-			s.NotifySliceLeader(msg, rect, LEAVE)
-			delete(s.requests, id)
-		}
-	})
-	s.SendMsg(dstAddr, msg)
-}
-
-func (s *Service) NotifySliceLeader(msg *Msg, n *Node, status byte) {
+func (s *Service) NotifySliceLeader(n *Node, status byte) {
 
 	slice := s.getMySlice()
 
 	if slice.Leader == nil {
 		glog.Errorf("Something is wrong!!! we are in the slice however there is no slice leader?")
+		return
 	}
 
-	if slice.Leader.ID.Cmp(s.id) == 0 {
-		glog.V(4).Info("we are leader?!")
-	}
+	msg := new(Msg)
+	msg.NewID()
+	msg.From = s.id
 	e := Event{n.ID, time.Now(), status, n.Addr.String()}
+	msg.Events = append(msg.Events, e)
 
-	notify := new(Msg)
-	notify.NewID()
-	notify.Type = EVENT_NOTIFICATION
-	notify.Events = append(notify.Events, e)
-	notify.From = s.ID()
-	s.SendMsg(slice.Leader.Addr, notify)
+	if s.IAmSliceLeader() {
+		// we are leader now
+		msg.Events = append(msg.Events, Event{s.id, time.Now(), JOIN, s.conn.LocalAddr().String()})
+		msg.Type = MESSAGE_EXCHANGE
+		s.Exchange(msg)
+		return
+	}
+
+	msg.Type = EVENT_NOTIFICATION
+	s.SendMsg(slice.Leader.Addr, msg)
 }
