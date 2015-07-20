@@ -19,10 +19,9 @@ var (
 const NODE_TIMEOUT = 9 * time.Second
 
 type Route struct {
-	slices      []*Slice
-	k           int // number of slices the ring is divided into
-	block       *big.Int
-	timeOutNode chan *Node
+	slices []*Slice
+	k      int // number of slices the ring is divided into
+	block  *big.Int
 }
 
 func (r *Route) Len() int {
@@ -129,29 +128,7 @@ func NewRoute(k int) *Route {
 
 		l = append(l, slice)
 	}
-	timeOutNode := make(chan *Node, 16)
-	r := &Route{l, k, block, timeOutNode}
+	r := &Route{l, k, block}
 	route = r
 	return r
-}
-
-func (r *Route) ServeTimeout(self *Slice) {
-	ticker := time.NewTicker(1 * time.Second)
-	other := make([]*Slice, 0)
-	for _, s := range r.slices {
-		if s != self {
-			other = append(other, s)
-		}
-	}
-	// Node timeout checker
-	for {
-		<-ticker.C
-		for _, s := range other {
-			if s.Leader != nil &&
-				s.Leader.updateAt.Add(3*time.Second).Before(time.Now()) {
-				glog.Errorf("Slice Leader Node %x timeout", s.Leader.ID)
-				r.Delete(s.Leader.ID)
-			}
-		}
-	}
 }

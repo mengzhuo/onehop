@@ -37,14 +37,17 @@ type Service struct {
 
 	bytePool *BytePool
 	id       *big.Int
+	selfNode *Node
 
 	Ticker *time.Ticker
 
 	exchangeMsg []*Msg
 	eventNotify []*Msg
 
-	selfSlice *Slice
-	pinger    *Node
+	selfSlice   *Slice
+	pinger      *Node
+	leftPonger  *Node
+	rightPonger *Node
 }
 
 type BytePool struct {
@@ -71,7 +74,7 @@ func (b *BytePool) Put(p []byte) {
 }
 
 // NetType, Address for UDP connection
-// k, u for OneHop slice number and unit number
+// k for OneHop slice number
 func NewService(netType, address string, k int) *Service {
 
 	listener, err := newListener(netType, address)
@@ -93,15 +96,14 @@ func NewService(netType, address string, k int) *Service {
 	n := &Node{ID: id, Addr: listener.LocalAddr().(*net.UDPAddr)}
 	route.Add(n)
 
-	eventTicker := time.NewTicker(3 * time.Second)
+	eventTicker := time.NewTicker(1 * time.Second)
 	slice := route.slices[route.GetIndex(id)]
 
-	service = &Service{listener, route, bp, id,
+	service = &Service{listener, route, bp, id, n,
 		eventTicker,
-		make([]*Msg, 0), make([]*Msg, 0), slice, n}
+		make([]*Msg, 0), make([]*Msg, 0), slice, n, nil, nil}
 
 	go service.Tick()
-	go route.ServeTimeout(slice)
 	return service
 }
 
@@ -111,7 +113,7 @@ func (s *Service) ID() *big.Int {
 
 func (s *Service) IAmSliceLeader() (answer bool) {
 
-	if s.selfSlice.Leader != nil && s.selfSlice.Leader.ID.Cmp(s.id) == 0 {
+	if s.selfSlice.Leader != nil && s.selfSlice.Leader == s.selfNode {
 		answer = true
 	}
 	return
@@ -145,8 +147,6 @@ func (s *Service) Tick() {
 		select {
 		case _ = <-s.Ticker.C:
 			s.tick(slice)
-		case n := <-s.route.timeOutNode:
-			s.NotifySliceLeader(n, LEAVE)
 		}
 	}
 
@@ -171,20 +171,54 @@ func (s *Service) tick(slice *Slice) {
 		n := slice.successorOf(s.id)
 		if n != nil {
 			s.SendMsg(n.Addr, msg)
+			s.leftPonger = n
 		}
+
 		pn := slice.predecessorOf(s.id)
 		if pn != nil {
 			s.SendMsg(pn.Addr, msg)
+			s.rightPonger = n
 		}
 
 	}
 
-	if s.pinger != nil && s.pinger.Addr != s.conn.LocalAddr() {
-		if s.pinger.updateAt.Add(NODE_TIMEOUT).Before(time.Now()) {
-			// Timeouted
-			s.route.Delete(s.pinger.ID)
-			s.NotifySliceLeader(s.pinger, LEAVE)
-		}
+	now := time.Now()
+
+	if s.selfSlice.Leader != nil && s.selfSlice.Leader != s.selfNode &&
+		s.selfSlice.Leader.updateAt.Add(3*time.Second).Before(now) {
+
+		// Timeouted
+		glog.Errorf("Slice Leader %s timeout", s.selfSlice.Leader)
+		s.route.Delete(s.selfSlice.Leader.ID)
+		s.NotifySliceLeader(s.selfSlice.Leader, LEAVE)
+	}
+
+	if s.pinger != nil && s.pinger != s.selfNode &&
+		s.pinger.updateAt.Add(3*time.Second).Before(now) {
+		// Timeouted
+		glog.Errorf("Pinger %s timeout", s.pinger)
+		s.route.Delete(s.pinger.ID)
+		s.NotifySliceLeader(s.pinger, LEAVE)
+		s.pinger = nil
+	}
+
+	if s.leftPonger != nil && s.leftPonger != s.selfNode &&
+		s.leftPonger.updateAt.Add(NODE_TIMEOUT).Before(now) {
+		// Timeouted
+		glog.Error("Left Ponger %s timeout", s.leftPonger)
+		s.route.Delete(s.leftPonger.ID)
+		s.NotifySliceLeader(s.leftPonger, LEAVE)
+
+		s.leftPonger = nil
+	}
+
+	if s.rightPonger != nil && s.rightPonger != s.selfNode &&
+		s.rightPonger.updateAt.Add(NODE_TIMEOUT).Before(now) {
+		// Timeouted
+		glog.Error("Right Ponger %s timeout", s.rightPonger)
+		s.route.Delete(s.rightPonger.ID)
+		s.NotifySliceLeader(s.rightPonger, LEAVE)
+		s.rightPonger = nil
 	}
 
 	// Reset all events
@@ -209,13 +243,14 @@ func (s *Service) Listen() {
 		if err != nil {
 			panic(err)
 		}
-		glog.V(10).Infof("Recv From:%x TYPE:%x", msg.From, msg.Type)
+		glog.V(10).Infof("Recv From:%x TYPE:%s", msg.From, typeName[msg.Type])
 		s.Handle(addr, msg)
 		s.bytePool.Put(p)
 	}
 }
 
 func (s *Service) Send(dstAddr *net.UDPAddr, p []byte) {
+
 	defer func() {
 		if r := recover(); r != nil {
 			glog.ErrorDepth(0, r)

@@ -80,9 +80,9 @@ func (u *Slice) Delete(id *big.Int) bool {
 	if i < len(u.nodes) && u.nodes[i].ID.Cmp(id) == 0 {
 		u.nodes = append(u.nodes[:i], u.nodes[i+1:]...)
 		u.updateLeader()
+		glog.Infof("slice %x Delete %x", u.Max, id)
 		return true
 	}
-	glog.Infof("slice %x Delete %x", u.Max, id)
 	return false
 }
 

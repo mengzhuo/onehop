@@ -27,6 +27,21 @@ const (
 	FIND_VALUE_RESPONSE
 )
 
+var typeName = []string{
+	"UNKNOWN",
+	"BOOTSTRAP",
+	"BOOTSTRAP_RESPONSE",
+	"KEEP_ALIVE",
+	"KEEP_ALIVE_RESPONSE",
+	"EVENT_NOTIFICATION",
+	"MESSAGE_EXCHANGE",
+	"REPLICATE",
+	"REPLICATE_RESPONSE",
+	"STORE",
+	"FIND_VALUE",
+	"FIND_VALUE_RESPONSE",
+}
+
 // Event
 const (
 	_ byte = iota
@@ -42,8 +57,8 @@ type Msg struct {
 }
 
 func (m *Msg) String() string {
-	return fmt.Sprintf("Msg:%d,Type:%x, From:%x, Events:%s",
-		m.ID, m.Type, m.From, m.Events)
+	return fmt.Sprintf("Msg:%d,Type:%s, From:%x, Events:%s",
+		m.ID, typeName[m.Type], m.From, m.Events)
 
 }
 

@@ -79,7 +79,6 @@ func (s *Service) Exchange(msg *Msg) {
 			// It's ourself
 			continue
 		}
-		glog.V(9).Infof("Exchange with :%x", slice.Leader.ID)
 		s.SendMsg(slice.Leader.Addr, msg)
 	}
 }
@@ -247,9 +246,13 @@ func (s *Service) KeepAlive(raddr *net.UDPAddr, msg *Msg) {
 	switch {
 	case cmp == -1 && idx+1 < slice.Len():
 		next = slice.nodes[idx+1]
+		s.rightPonger = next
+		s.leftPonger = nil
 	case cmp == 1 && idx > 0:
 		// msg bigger than us msg to smaller node
 		next = slice.nodes[idx-1]
+		s.leftPonger = next
+		s.rightPonger = nil
 	default:
 		// Nothin to pass on
 		return
