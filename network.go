@@ -4,8 +4,12 @@ package onehop
 import (
 	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"net"
+	"net/http"
+	"net/rpc"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -32,15 +36,17 @@ func newListener(netType, address string) (conn *net.UDPConn, err error) {
 }
 
 type Service struct {
-	conn    *net.UDPConn
+	conn *net.UDPConn
+
 	route   *Route
 	counter uint8
 
+	db       *Storage
 	bytePool *BytePool
 	id       *big.Int
 	selfNode *Node
 
-	Ticker *time.Ticker
+	ticker *time.Ticker
 
 	exchangeEvent []Event
 	notifyEvent   []Event
@@ -49,6 +55,8 @@ type Service struct {
 	pinger      *Node
 	leftPonger  *Node
 	rightPonger *Node
+	W, R        int
+	rpcPool     *RPCPool
 }
 
 type BytePool struct {
@@ -76,16 +84,21 @@ func (b *BytePool) Put(p []byte) {
 
 // NetType, Address for UDP connection
 // k for OneHop slice number
-func NewService(netType, address string, k int) *Service {
+func NewService(netType, address string, k, w, r int) *Service {
 
 	listener, err := newListener(netType, address)
+	if err != nil {
+		panic(err)
+	}
+	port := strings.SplitN(address, ":", 2)
+	rpc_listener, err := net.Listen("tcp", fmt.Sprintf(":%s", port[1]))
 	if err != nil {
 		panic(err)
 	}
 
 	glog.Infof("Listening to :%s %s", netType, address)
 	route = NewRoute(k)
-	bp := &BytePool{make(chan []byte, 1024), 8192}
+	bp := &BytePool{make(chan []byte, 1024), 16 * 1024}
 	max := new(big.Int).SetBytes(FullID)
 
 	id, err := rand.Int(rand.Reader, max)
@@ -100,12 +113,44 @@ func NewService(netType, address string, k int) *Service {
 	eventTicker := time.NewTicker(1 * time.Second)
 	slice := route.slices[route.GetIndex(id)]
 
-	service = &Service{listener, route, uint8(0), bp, id, n,
+	service = &Service{listener, route, uint8(0), NewStorage(),
+		bp, id, n,
 		eventTicker,
-		make([]Event, 0), make([]Event, 0), slice, n, nil, nil}
+		make([]Event, 0), make([]Event, 0), slice, n,
+		nil, nil, w, r, &RPCPool{make(map[string]*rpc.Client, 0)}}
 
+	rpc.HandleHTTP()
+	rpc.Register(service.db)
+
+	go http.Serve(rpc_listener, nil)
 	go service.Tick()
 	return service
+}
+
+func (s *Service) Get(key []byte) *Item {
+
+	items := make([]*Item, s.R)
+	id := new(big.Int).SetBytes(key)
+	for i := 0; i < s.R; i++ {
+		node := s.route.SuccessorOf(id)
+		if node == nil {
+			continue
+		}
+		client, err := s.rpcPool.Get(node.Addr.String())
+		if err != nil {
+			glog.Error(err)
+		}
+		var reply *Item
+		err = client.Call("Get", string(key), reply)
+		if err != nil {
+			items[i] = reply
+		}
+	}
+
+	for _, item := range items {
+		return item
+	}
+	return nil
 }
 
 func (s *Service) ID() *big.Int {
@@ -124,7 +169,7 @@ func (s *Service) Tick() {
 
 	for {
 		select {
-		case _ = <-s.Ticker.C:
+		case _ = <-s.ticker.C:
 			s.tick()
 		}
 	}
