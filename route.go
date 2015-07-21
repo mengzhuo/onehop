@@ -3,7 +3,6 @@ package onehop
 
 import (
 	"math/big"
-	"time"
 
 	"github.com/golang/glog"
 )
@@ -16,8 +15,6 @@ var (
 	zeroID = big.NewInt(int64(0))
 )
 
-const NODE_TIMEOUT = 9 * time.Second
-
 type Route struct {
 	slices []*Slice
 	k      int // number of slices the ring is divided into
@@ -25,7 +22,11 @@ type Route struct {
 }
 
 func (r *Route) Len() int {
-	return len(r.slices)
+	count := 0
+	for _, s := range r.slices {
+		count += s.Len()
+	}
+	return count
 }
 
 func (r *Route) GetIndex(id *big.Int) (sliceidx int) {

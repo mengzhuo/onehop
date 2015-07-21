@@ -32,8 +32,9 @@ func newListener(netType, address string) (conn *net.UDPConn, err error) {
 }
 
 type Service struct {
-	conn  *net.UDPConn
-	route *Route
+	conn    *net.UDPConn
+	route   *Route
+	counter uint8
 
 	bytePool *BytePool
 	id       *big.Int
@@ -41,8 +42,8 @@ type Service struct {
 
 	Ticker *time.Ticker
 
-	exchangeMsg []*Msg
-	eventNotify []*Msg
+	exchangeEvent []Event
+	notifyEvent   []Event
 
 	selfSlice   *Slice
 	pinger      *Node
@@ -99,9 +100,9 @@ func NewService(netType, address string, k int) *Service {
 	eventTicker := time.NewTicker(1 * time.Second)
 	slice := route.slices[route.GetIndex(id)]
 
-	service = &Service{listener, route, bp, id, n,
+	service = &Service{listener, route, uint8(0), bp, id, n,
 		eventTicker,
-		make([]*Msg, 0), make([]*Msg, 0), slice, n, nil, nil}
+		make([]Event, 0), make([]Event, 0), slice, n, nil, nil}
 
 	go service.Tick()
 	return service
@@ -119,93 +120,45 @@ func (s *Service) IAmSliceLeader() (answer bool) {
 	return
 }
 
-func (s *Service) MsgToEvents(msgs []*Msg) []Event {
-
-	es := make([]Event, 0)
-	for _, m := range msgs {
-
-		for _, e := range m.Events {
-			if e.Time.Add(EVENT_TIMEOUT).Before(time.Now()) {
-				continue
-			}
-			es = append(es, e)
-		}
-		es = append(es, m.Events...)
-	}
-	return es
-}
-
-func (s *Service) getMySlice() (slice *Slice) {
-
-	slice = s.route.slices[s.route.GetIndex(s.id)]
-	return
-}
-
 func (s *Service) Tick() {
-	slice := s.getMySlice()
+
 	for {
 		select {
 		case _ = <-s.Ticker.C:
-			s.tick(slice)
+			s.tick()
 		}
 	}
 
 }
 
-func (s *Service) tick(slice *Slice) {
-
-	if s.IAmSliceLeader() {
-		// We are slice leader
-		// put all event_notify to unit leader
-		// And exchange with other slice leader
-		emsg := NewMsg(MESSAGE_EXCHANGE, s.ID(),
-			s.MsgToEvents(s.eventNotify))
-		emsg.Events = append(emsg.Events,
-			Event{s.id, time.Now(), JOIN, s.conn.LocalAddr().String()})
-		s.Exchange(emsg)
-
-		emsg.Events = append(emsg.Events, s.MsgToEvents(s.exchangeMsg)...)
-		msg := NewMsg(KEEP_ALIVE,
-			s.ID(), emsg.Events)
-
-		n := slice.successorOf(s.id)
-		if n != nil {
-			s.SendMsg(n.Addr, msg)
-			s.leftPonger = n
-		}
-
-		pn := slice.predecessorOf(s.id)
-		if pn != nil {
-			s.SendMsg(pn.Addr, msg)
-			s.rightPonger = n
-		}
-
-	}
+func (s *Service) tick() {
 
 	now := time.Now()
+	// After 128 second it will trigger all node to sync data
+	for _, slice := range s.route.slices {
 
-	if s.selfSlice.Leader != nil && s.selfSlice.Leader != s.selfNode &&
-		s.selfSlice.Leader.updateAt.Add(3*time.Second).Before(now) {
-
-		// Timeouted
-		glog.Errorf("Slice Leader %s timeout", s.selfSlice.Leader)
-		s.route.Delete(s.selfSlice.Leader.ID)
-		s.NotifySliceLeader(s.selfSlice.Leader, LEAVE)
+		if slice.Leader != nil && slice.Leader != s.selfNode &&
+			slice.Leader.updateAt.Add(SLICE_LEADER_TIMEOUT).Before(now) {
+			// Timeouted
+			glog.Errorf("Slice Leader %s timeout", slice.Leader)
+			s.NotifySliceLeader(slice.Leader, LEAVE)
+			s.route.Delete(slice.Leader.ID)
+		}
 	}
 
 	if s.pinger != nil && s.pinger != s.selfNode &&
-		s.pinger.updateAt.Add(3*time.Second).Before(now) {
+		s.pinger.updateAt.Add(NODE_TIMEOUT).Before(now) {
 		// Timeouted
 		glog.Errorf("Pinger %s timeout", s.pinger)
-		s.route.Delete(s.pinger.ID)
 		s.NotifySliceLeader(s.pinger, LEAVE)
+		s.route.Delete(s.pinger.ID)
 		s.pinger = nil
 	}
 
 	if s.leftPonger != nil && s.leftPonger != s.selfNode &&
 		s.leftPonger.updateAt.Add(NODE_TIMEOUT).Before(now) {
 		// Timeouted
-		glog.Error("Left Ponger %s timeout", s.leftPonger)
+		glog.Errorf("Left Ponger %s timeout", s.leftPonger)
 		s.route.Delete(s.leftPonger.ID)
 		s.NotifySliceLeader(s.leftPonger, LEAVE)
 
@@ -215,15 +168,57 @@ func (s *Service) tick(slice *Slice) {
 	if s.rightPonger != nil && s.rightPonger != s.selfNode &&
 		s.rightPonger.updateAt.Add(NODE_TIMEOUT).Before(now) {
 		// Timeouted
-		glog.Error("Right Ponger %s timeout", s.rightPonger)
+		glog.Errorf("Right Ponger %s timeout", s.rightPonger)
 		s.route.Delete(s.rightPonger.ID)
 		s.NotifySliceLeader(s.rightPonger, LEAVE)
 		s.rightPonger = nil
 	}
 
+	if s.IAmSliceLeader() {
+		// We are slice leader
+		// put all event_notify to unit leader
+		// And exchange with other slice leader
+		emsg := NewMsg(MESSAGE_EXCHANGE, s.ID(), s.notifyEvent)
+		emsg.Events = append(emsg.Events, Event{s.id, now, JOIN, s.conn.LocalAddr().String()})
+
+		// Each 22 seconds notify other slice leader about all nodes
+		if s.counter%22 == 0 {
+			glog.V(5).Info("Tell other leader about our slice")
+			for _, n := range s.selfSlice.nodes {
+				emsg.Events = append(emsg.Events, Event{n.ID, now, JOIN, n.Addr.String()})
+			}
+		}
+		s.Exchange(emsg)
+
+		emsg.Events = append(emsg.Events, s.exchangeEvent...)
+		msg := NewMsg(KEEP_ALIVE, s.ID(), emsg.Events)
+
+		n := s.selfSlice.successorOf(s.id)
+		if n != nil {
+			s.SendMsg(n.Addr, msg)
+			s.leftPonger = n
+		}
+
+		pn := s.selfSlice.predecessorOf(s.id)
+		if pn != nil {
+			s.SendMsg(pn.Addr, msg)
+			s.rightPonger = n
+		}
+
+	} else {
+		// Each 10 seconds, tell our leader
+		if s.counter%13 == 0 {
+			glog.V(5).Infof("Tell leader %x about ourself", s.selfSlice.Leader.ID)
+			msg := NewMsg(EVENT_NOTIFICATION, s.id,
+				[]Event{Event{s.id, now, JOIN, s.conn.LocalAddr().String()}})
+			s.SendMsg(s.selfSlice.Leader.Addr, msg)
+		}
+	}
+
 	// Reset all events
-	s.exchangeMsg = s.exchangeMsg[:0]
-	s.eventNotify = s.eventNotify[:0]
+	s.exchangeEvent = s.exchangeEvent[:0]
+	s.notifyEvent = s.notifyEvent[:0]
+	s.counter += 1
 }
 
 func (s *Service) Listen() {
@@ -274,27 +269,25 @@ func (s *Service) SendMsg(dstAddr *net.UDPAddr, msg *Msg) {
 
 func (s *Service) NotifySliceLeader(n *Node, status byte) {
 
-	slice := s.getMySlice()
+	slice := s.selfSlice
 
 	if slice.Leader == nil {
 		glog.Errorf("Something is wrong!!! we are in the slice however there is no slice leader?")
 		return
 	}
-
-	msg := new(Msg)
-	msg.NewID()
-	msg.From = s.id
+	glog.V(5).Infof("Notify Slice leader about lossing %s", n)
 	e := Event{n.ID, time.Now(), status, n.Addr.String()}
-	msg.Events = append(msg.Events, e)
 
 	if s.IAmSliceLeader() {
 		// we are leader now
-		msg.Events = append(msg.Events, Event{s.id, time.Now(), JOIN, s.conn.LocalAddr().String()})
-		msg.Type = MESSAGE_EXCHANGE
-		s.Exchange(msg)
+		s.exchangeEvent = append(s.exchangeEvent, e)
 		return
+	} else {
+		msg := new(Msg)
+		msg.NewID()
+		msg.From = s.id
+		msg.Events = append(msg.Events, e)
+		msg.Type = EVENT_NOTIFICATION
+		s.SendMsg(slice.Leader.Addr, msg)
 	}
-
-	msg.Type = EVENT_NOTIFICATION
-	s.SendMsg(slice.Leader.Addr, msg)
 }

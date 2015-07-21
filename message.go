@@ -6,10 +6,7 @@ import (
 	"math/rand"
 )
 
-const (
-	IDENTIFIER   = 0x31
-	MSG_MAX_SIZE = 8192
-)
+const MSG_MAX_SIZE = 8192
 
 // Message Type
 const (

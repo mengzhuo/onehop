@@ -7,7 +7,11 @@ import (
 	"github.com/golang/glog"
 )
 
-const EVENT_TIMEOUT = 5 * time.Second
+const (
+	SLICE_LEADER_TIMEOUT = 6 * time.Second
+	EVENT_TIMEOUT        = 5 * time.Second
+	NODE_TIMEOUT         = 10 * time.Second
+)
 
 func (s *Service) Handle(raddr *net.UDPAddr, msg *Msg) {
 
@@ -32,7 +36,6 @@ func (s *Service) Handle(raddr *net.UDPAddr, msg *Msg) {
 	case EVENT_NOTIFICATION:
 		s.DoEventNotification(raddr, msg)
 	case REPLICATE:
-
 		s.Replicate(raddr, msg)
 	case REPLICATE_RESPONSE:
 		s.ReplicateResponse(raddr, msg)
@@ -44,26 +47,31 @@ func (s *Service) Handle(raddr *net.UDPAddr, msg *Msg) {
 
 func (s *Service) DoEventNotification(raddr *net.UDPAddr, msg *Msg) {
 	// Any form of notify MUST be deal with in T(min)
-	s.eventNotify = append(s.eventNotify, msg)
 
 	if msg.Events == nil {
 		// This node will take over our leadership
-		slice := s.getMySlice()
-		s.tick(slice)
-		n := slice.Get(msg.From)
+		n := s.selfSlice.Get(msg.From)
 		if n == nil {
 			n = &Node{msg.From, raddr, time.Now()}
 			s.route.Add(n)
 		}
 		n.updateAt = time.Now()
+		s.exchangeEvent = append(s.exchangeEvent,
+			Event{msg.From, time.Now(), JOIN, raddr.String()})
+		s.tick()
 		return
+	} else {
+		s.notifyEvent = append(s.notifyEvent, msg.Events...)
 	}
 
 	s.handleEvents(msg)
 }
 
 func (s *Service) DoMessageExchange(raddr *net.UDPAddr, msg *Msg) {
-	s.exchangeMsg = append(s.exchangeMsg, msg)
+	if msg.Events == nil {
+		return
+	}
+	s.exchangeEvent = append(s.exchangeEvent, msg.Events...)
 	s.handleEvents(msg)
 }
 
@@ -89,41 +97,22 @@ func (s *Service) Exchange(msg *Msg) {
 func (s *Service) BootStrapReponse(raddr *net.UDPAddr, msg *Msg) {
 
 	// Try with old slice leader
-	slice_idx := s.route.GetIndex(s.id)
+	var old_leader *Node
 	glog.Infof("BootStrap response %s", msg)
 
-	old_leader := false
 	for _, rn := range msg.Events {
 		n := rn.ToNode()
 		s.route.Add(n)
-		nslice_idx := s.route.GetIndex(n.ID)
 
-		if nslice_idx != slice_idx {
+		nslice_idx := s.route.GetIndex(n.ID)
+		if s.route.slices[nslice_idx] != s.selfSlice {
 			continue
 		}
-
-		old_leader = true
-		nslice := s.route.slices[nslice_idx]
-
-		nmsg := new(Msg)
-		nmsg.NewID()
-		nmsg.Type = EVENT_NOTIFICATION
-		nmsg.From = s.id
-
-		if nslice.Leader.ID.Cmp(s.id) == 0 {
-			// We became leader notify leader to tick
-			nmsg.Events = nil
-		} else {
-			e := Event{s.ID(), time.Now(), JOIN, s.conn.LocalAddr().String()}
-			nmsg.Events = []Event{e}
-		}
-		glog.V(3).Infof("Send Event %s", nmsg)
-		s.SendMsg(n.Addr, nmsg)
-
+		old_leader = n
 	}
 
 	// we are new leader...tell other slice leader
-	if !old_leader {
+	if old_leader == nil {
 		glog.V(2).Infof("%x are new leader ", s.id)
 		msg.Type = MESSAGE_EXCHANGE
 		msg.NewID()
@@ -131,7 +120,22 @@ func (s *Service) BootStrapReponse(raddr *net.UDPAddr, msg *Msg) {
 			s.conn.LocalAddr().String()}
 		msg.Events = []Event{*event}
 		s.Exchange(msg)
+		return
 	}
+
+	msg.Type = EVENT_NOTIFICATION
+	msg.From = s.id
+	msg.NewID()
+	if old_leader != s.selfSlice.Leader {
+		// Tell old Leader about add
+		msg.Events = nil
+	} else {
+		event := Event{s.ID(), time.Now(), JOIN,
+			s.conn.LocalAddr().String()}
+		msg.Events = []Event{event}
+	}
+	s.SendMsg(old_leader.Addr, msg)
+
 }
 
 // With bootstrap we should return all slice leaders,
@@ -216,7 +220,6 @@ func (s *Service) ReplicateResponse(raddr *net.UDPAddr, msg *Msg) {
 
 func (s *Service) KeepAlive(raddr *net.UDPAddr, msg *Msg) {
 
-	glog.V(4).Infof("KeepAlive Msg From:%x", msg.From)
 	n := s.route.GetNode(msg.From)
 	if n == nil {
 		n = &Node{ID: msg.From, Addr: raddr, updateAt: time.Now()}
@@ -226,7 +229,7 @@ func (s *Service) KeepAlive(raddr *net.UDPAddr, msg *Msg) {
 	n.updateAt = time.Now()
 	s.handleEvents(msg)
 
-	slice := s.getMySlice()
+	slice := s.selfSlice
 	idx := slice.getID(s.id)
 
 	// Response to requester

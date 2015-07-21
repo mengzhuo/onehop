@@ -8,14 +8,6 @@ import (
 	"time"
 )
 
-// Node Type
-const (
-	_ byte = iota
-	NORMAL
-	UNIT_LEADER
-	SLICE_LEADER
-)
-
 type Event struct {
 	ID     *big.Int  `json:"i"`
 	Time   time.Time `json:"t"`
