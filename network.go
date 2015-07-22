@@ -131,26 +131,68 @@ func (s *Service) Get(key []byte) *Item {
 
 	items := make([]*Item, s.R)
 	id := new(big.Int).SetBytes(key)
+
 	for i := 0; i < s.R; i++ {
+
 		node := s.route.SuccessorOf(id)
 		if node == nil {
-			continue
+			break
 		}
 		client, err := s.rpcPool.Get(node.Addr.String())
 		if err != nil {
 			glog.Error(err)
+			continue
 		}
 		var reply *Item
 		err = client.Call("Get", string(key), reply)
 		if err != nil {
 			items[i] = reply
 		}
+		id = node.ID
 	}
 
-	for _, item := range items {
-		return item
+	if len(items) == 0 {
+		return nil
 	}
-	return nil
+	max_item := items[0]
+
+	for _, item := range items {
+		if item.Id > max_item.Id {
+			max_item = item
+		}
+	}
+	return max_item
+}
+
+func (s *Service) Put(key []byte, item *Item) (count int) {
+
+	id := new(big.Int).SetBytes(key)
+
+	count = 0
+
+	for i := 0; i < s.W; i++ {
+
+		node := s.route.SuccessorOf(id)
+		if node == nil {
+			break
+		}
+		client, err := s.rpcPool.Get(node.Addr.String())
+		if err != nil {
+			glog.Error(err)
+			continue
+		}
+		args := &PutArgs{string(key), item}
+
+		var reply *bool
+		err = client.Call("Put", args, reply)
+		if err == nil {
+			count += 1
+		}
+		id = node.ID
+	}
+
+	return
+
 }
 
 func (s *Service) ID() *big.Int {
