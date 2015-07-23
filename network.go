@@ -129,24 +129,39 @@ func NewService(netType, address string, k, w, r int) *Service {
 
 func (s *Service) Get(key []byte) *Item {
 
-	items := make([]*Item, s.R)
+	items := make([]*Item, 0)
 	id := new(big.Int).SetBytes(key)
 
 	for i := 0; i < s.R; i++ {
 
 		node := s.route.SuccessorOf(id)
+		glog.V(3).Infof("Get Found SuccessorOf %x is %s", id, node)
 		if node == nil {
+			// no more to read...
 			break
 		}
+		if node == s.selfNode {
+			// it's ourself
+			if item, ok := s.db.db[fmt.Sprintf("%x", key)]; ok {
+				items = append(items, item)
+			}
+			id = node.ID
+			continue
+		}
+
 		client, err := s.rpcPool.Get(node.Addr.String())
+
+		glog.V(1).Infof("Get %x From:%s", key, node.Addr)
+
 		if err != nil {
 			glog.Error(err)
 			continue
 		}
 		var reply *Item
-		err = client.Call("Get", string(key), reply)
-		if err != nil {
-			items[i] = reply
+		err = client.Call("Storage.Get", key, reply)
+		if err != nil && reply != nil {
+			glog.V(1).Infof("Get reply %s", reply)
+			items = append(items, reply)
 		}
 		id = node.ID
 	}
@@ -154,6 +169,7 @@ func (s *Service) Get(key []byte) *Item {
 	if len(items) == 0 {
 		return nil
 	}
+
 	max_item := items[0]
 
 	for _, item := range items {
@@ -173,26 +189,43 @@ func (s *Service) Put(key []byte, item *Item) (count int) {
 	for i := 0; i < s.W; i++ {
 
 		node := s.route.SuccessorOf(id)
+		glog.V(3).Infof("Put Found SuccessorOf %x is %s", id, node)
+
 		if node == nil {
+			// no more to write...
 			break
 		}
+		if node == s.selfNode {
+			// it's ourself
+			k := fmt.Sprintf("%x", key)
+			if selfItem, ok := s.db.db[k]; !ok {
+				s.db.db[k] = item
+				count += 1
+			} else {
+				if selfItem.Id < item.Id {
+					s.db.db[k] = item
+					count += 1
+				}
+			}
+			id = node.ID
+			continue
+		}
+		glog.V(3).Infof("Put to %s", node.Addr.String())
 		client, err := s.rpcPool.Get(node.Addr.String())
 		if err != nil {
 			glog.Error(err)
 			continue
 		}
-		args := &PutArgs{string(key), item}
+		args := &PutArgs{key, item}
 
 		var reply *bool
-		err = client.Call("Put", args, reply)
+		err = client.Call("Storage.Put", args, reply)
 		if err == nil {
 			count += 1
 		}
 		id = node.ID
 	}
-
 	return
-
 }
 
 func (s *Service) ID() *big.Int {

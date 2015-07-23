@@ -26,11 +26,17 @@ func (s *Slice) successorOf(id *big.Int) (n *Node) {
 	}
 
 	i := s.getID(id)
-	if i+1 < s.Len() {
+
+	if s.nodes[i].ID.Cmp(id) == 0 {
 		// ID in our nodes
-		return s.nodes[i+1]
+		if i+1 < s.Len() {
+			// ID in our nodes
+			return s.nodes[i+1]
+		} else {
+			return nil
+		}
 	}
-	return nil
+	return s.nodes[i]
 }
 
 func (s *Slice) predecessorOf(id *big.Int) (n *Node) {
@@ -39,13 +45,18 @@ func (s *Slice) predecessorOf(id *big.Int) (n *Node) {
 		// Faster query
 		return nil
 	}
-
 	i := s.getID(id)
-	if i > 0 {
+	if s.nodes[i].ID.Cmp(id) == 0 {
 		// ID in our nodes
-		return s.nodes[i-1]
+		if i-1 >= 0 {
+			// ID in our nodes
+			return s.nodes[i-1]
+		} else {
+			return nil
+		}
 	}
-	return nil
+	return s.nodes[i]
+
 }
 func (u *Slice) getID(id *big.Int) (i int) {
 

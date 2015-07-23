@@ -4,6 +4,8 @@ package onehop
 import (
 	"fmt"
 	"sync"
+
+	"github.com/golang/glog"
 )
 
 type Item struct {
@@ -25,15 +27,15 @@ func NewStorage() *Storage {
 }
 
 type PutArgs struct {
-	Key  string
+	Key  []byte
 	Item *Item
 }
 
-func (s *Storage) Get(key string, reply *Item) error {
-
+func (s *Storage) Get(key []byte, reply *Item) error {
+	glog.V(3).Infof("Get Key %x", key)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	reply, ok := s.db[key]
+	reply, ok := s.db[fmt.Sprintf("%x", key)]
 
 	if !ok {
 		return fmt.Errorf("key %s not existed", key)
@@ -45,10 +47,13 @@ func (s *Storage) Put(args *PutArgs, reply *bool) (err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	ditem, ok := s.db[args.Key]
+	glog.V(3).Infof("Put Item %x", args.Item)
+
+	key := fmt.Sprintf("%x", args.Key)
+	ditem, ok := s.db[key]
 	if !ok {
 		// Override
-		s.db[args.Key] = args.Item
+		s.db[key] = args.Item
 		*reply = true
 		return
 	}
@@ -58,13 +63,13 @@ func (s *Storage) Put(args *PutArgs, reply *bool) (err error) {
 		return fmt.Errorf("Invaild Id %d", args.Item.Id)
 	}
 
-	s.db[args.Key] = args.Item
+	s.db[key] = args.Item
 	*reply = true
 	return nil
 }
 
 type DeleteArgs struct {
-	Key string
+	Key []byte
 	Id  uint64
 }
 
@@ -73,7 +78,8 @@ func (s *Storage) Delete(args *DeleteArgs, reply *bool) (err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	ditem, ok := s.db[args.Key]
+	key := fmt.Sprintf("%x", args.Key)
+	ditem, ok := s.db[key]
 	if !ok {
 		return fmt.Errorf("key %s not existed", args.Key)
 	}
@@ -82,7 +88,7 @@ func (s *Storage) Delete(args *DeleteArgs, reply *bool) (err error) {
 		*reply = false
 		return fmt.Errorf("Invaild Id %d", args.Id)
 	}
-	delete(s.db, args.Key)
+	delete(s.db, key)
 	*reply = true
 	return nil
 }

@@ -42,3 +42,13 @@ func TestNewRoute(t *testing.T) {
 		t.Errorf("No Leader :%d", len(r.slices[0].nodes))
 	}
 }
+
+func TestSuccessorOf(t *testing.T) {
+	r := NewRoute(4)
+	AddRouteNode(r)
+
+	node := r.SuccessorOf(new(big.Int).SetBytes(FullID))
+	if node.ID != big.NewInt(2) {
+		t.Errorf("Success Of failed :%s", node.ID)
+	}
+}
