@@ -157,6 +157,11 @@ func (s *Service) Get(key []byte) *Item {
 	return max_item
 }
 
+func (s *Service) PutByString(key string, item *Item) int {
+	k := []byte(key)
+	return s.Put(k, item)
+}
+
 func (s *Service) Put(key []byte, item *Item) (count int) {
 
 	id := new(big.Int).SetBytes(key)
