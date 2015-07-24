@@ -83,6 +83,13 @@ func NewService(netType, address string, k, w, r int) *Service {
 	return service
 }
 
+func (s *Service) GetByString(key string) *Item {
+
+	k := []byte(key)
+	return s.Get(k)
+
+}
+
 func (s *Service) Get(key []byte) *Item {
 
 	items := make([]*Item, 0)
