@@ -86,16 +86,27 @@ func NewService(netType, address string, k, w, r int) *Service {
 func (s *Service) Get(key []byte) *Item {
 
 	items := make([]*Item, 0)
+	var first_node *Node
 	id := new(big.Int).SetBytes(key)
 
 	for i := 0; i < s.R; i++ {
 
 		node := s.route.SuccessorOf(id)
+
 		glog.V(3).Infof("Get Found SuccessorOf %x is %s", id, node)
 		if node == nil {
 			// no more to read...
 			break
 		}
+		if first_node == nil {
+			first_node = node
+		} else {
+			// Loopbacked
+			if node == first_node {
+				break
+			}
+		}
+
 		if node == s.selfNode {
 			// it's ourself
 			if item, ok := s.db.db[fmt.Sprintf("%x", key)]; ok {
@@ -128,18 +139,21 @@ func (s *Service) Get(key []byte) *Item {
 
 	max_item := items[0]
 
-	for _, item := range items {
-		if item.Ver > max_item.Ver {
-			max_item = item
+	if len(items) > 1 {
+		for _, item := range items[1:] {
+			if item.Ver > max_item.Ver {
+				max_item = item
+			}
 		}
 	}
+
 	return max_item
 }
 
 func (s *Service) Put(key []byte, item *Item) (count int) {
 
 	id := new(big.Int).SetBytes(key)
-
+	var first_node *Node
 	count = 0
 
 	for i := 0; i < s.W; i++ {
@@ -150,6 +164,15 @@ func (s *Service) Put(key []byte, item *Item) (count int) {
 		if node == nil {
 			// no more to write...
 			break
+		}
+
+		if first_node == nil {
+			first_node = node
+		} else {
+			// Loopbacked
+			if node == first_node {
+				break
+			}
 		}
 		if node == s.selfNode {
 			// it's ourself
@@ -205,6 +228,16 @@ func (s *Service) Tick() {
 		}
 	}
 
+}
+
+func (s *Service) BootStrapFrom(address string) {
+
+	glog.Infof("BootStrap From :%s", address)
+	addr, _ := net.ResolveUDPAddr("udp", address)
+	msg := &Msg{}
+	msg.Type = BOOTSTRAP
+	msg.NewID()
+	s.SendMsg(addr, msg)
 }
 
 func (s *Service) tick() {
