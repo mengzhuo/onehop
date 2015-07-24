@@ -136,6 +136,28 @@ func (s *Service) BootStrapReponse(raddr *net.UDPAddr, msg *Msg) {
 	}
 	s.SendMsg(old_leader.Addr, msg)
 
+	// Replicate from siblings
+
+	node := s.route.SuccessorOf(s.id)
+	if node != nil {
+		s.goReplicate(node)
+	}
+}
+
+func (s *Service) goReplicate(node *Node) {
+	client, err := s.rpcPool.Get(node.Addr.String())
+	if err != nil {
+		glog.Errorf("Replication failed on %x", node.ID)
+	}
+	var reply *map[string]*Item
+	client.Call("Replicate", s.id.String(), reply)
+	if reply == nil {
+		glog.Errorf("Replication failed on %x return nil", node.ID)
+	}
+
+	for k, v := range *reply {
+		s.db.db[k] = v
+	}
 }
 
 // With bootstrap we should return all slice leaders,
