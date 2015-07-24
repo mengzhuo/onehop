@@ -138,9 +138,11 @@ func (s *Service) BootStrapReponse(raddr *net.UDPAddr, msg *Msg) {
 
 	// Replicate from siblings
 
-	node := s.route.SuccessorOf(s.id)
-	if node != nil {
-		s.goReplicate(node)
+	for i := 0; i < s.R; i++ {
+		node := s.route.SuccessorOf(s.id)
+		if node != nil {
+			s.goReplicate(node)
+		}
 	}
 }
 
@@ -153,6 +155,7 @@ func (s *Service) goReplicate(node *Node) {
 	client.Call("Replicate", s.id.String(), reply)
 	if reply == nil {
 		glog.Errorf("Replication failed on %x return nil", node.ID)
+		return
 	}
 
 	for k, v := range *reply {
