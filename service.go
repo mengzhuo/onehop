@@ -35,7 +35,7 @@ type Service struct {
 	leftPonger  *Node
 	rightPonger *Node
 	W, R        int
-	rpcPool     *RPCPool
+	RPCPool     *RPCPool
 }
 
 // NetType, Address for UDP connection
@@ -79,7 +79,6 @@ func NewService(netType, address string, k, w, r int) *Service {
 	rpc.Register(service.db)
 
 	go http.Serve(rpc_listener, nil)
-	go service.Tick()
 	return service
 }
 
@@ -123,7 +122,7 @@ func (s *Service) Get(key []byte) *Item {
 			continue
 		}
 
-		client, err := s.rpcPool.Get(node.Addr.String())
+		client, err := s.RPCPool.Get(node.Addr.String())
 
 		glog.V(1).Infof("Get %x From:%s", key, node.Addr)
 
@@ -202,7 +201,7 @@ func (s *Service) Put(key []byte, item *Item) (count int) {
 			continue
 		}
 		glog.V(3).Infof("Put to %s", node.Addr.String())
-		client, err := s.rpcPool.Get(node.Addr.String())
+		client, err := s.RPCPool.Get(node.Addr.String())
 		if err != nil {
 			glog.Error(err)
 			continue
@@ -343,6 +342,8 @@ func (s *Service) tick() {
 }
 
 func (s *Service) Listen() {
+
+	go service.Tick()
 
 	for {
 

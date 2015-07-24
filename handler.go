@@ -147,7 +147,7 @@ func (s *Service) BootStrapReponse(raddr *net.UDPAddr, msg *Msg) {
 }
 
 func (s *Service) goReplicate(node *Node) {
-	client, err := s.rpcPool.Get(node.Addr.String())
+	client, err := s.RPCPool.Get(node.Addr.String())
 	if err != nil {
 		glog.Errorf("Replication failed on %x", node.ID)
 	}

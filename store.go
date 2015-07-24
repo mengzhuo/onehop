@@ -32,13 +32,17 @@ type PutArgs struct {
 }
 
 func (s *Storage) Get(key []byte, reply *Item) error {
-	glog.V(3).Infof("Get Key %x", key)
+
+	k := fmt.Sprintf("%x", key)
+
+	glog.V(3).Infof("Get Key %s", k)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	reply, ok := s.db[fmt.Sprintf("%x", key)]
+	var ok bool
+	reply, ok = s.db[k]
 
 	if !ok {
-		return fmt.Errorf("key %s not existed", key)
+		return fmt.Errorf("key %s not existed", k)
 	}
 	return nil
 }
@@ -47,9 +51,9 @@ func (s *Storage) Put(args *PutArgs, reply *bool) (err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	glog.V(3).Infof("Put Item %x", args.Item)
-
 	key := fmt.Sprintf("%x", args.Key)
+	glog.V(3).Infof("Put Item %s %x", key, args.Item)
+
 	ditem, ok := s.db[key]
 	if !ok {
 		// Override
