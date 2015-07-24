@@ -129,7 +129,7 @@ func (s *Service) Get(key []byte) *Item {
 	max_item := items[0]
 
 	for _, item := range items {
-		if item.Id > max_item.Id {
+		if item.Ver > max_item.Ver {
 			max_item = item
 		}
 	}
@@ -158,7 +158,7 @@ func (s *Service) Put(key []byte, item *Item) (count int) {
 				s.db.db[k] = item
 				count += 1
 			} else {
-				if selfItem.Id < item.Id {
+				if selfItem.Ver < item.Ver {
 					s.db.db[k] = item
 					count += 1
 				}

@@ -9,7 +9,7 @@ import (
 )
 
 type Item struct {
-	Id   uint64
+	Ver  uint64
 	Data []byte
 }
 
@@ -58,9 +58,9 @@ func (s *Storage) Put(args *PutArgs, reply *bool) (err error) {
 		return
 	}
 
-	if ditem.Id > args.Item.Id {
+	if ditem.Ver > args.Item.Ver {
 		*reply = false
-		return fmt.Errorf("Invaild Id %d", args.Item.Id)
+		return fmt.Errorf("Invaild Id %d", args.Item.Ver)
 	}
 
 	s.db[key] = args.Item
@@ -70,7 +70,7 @@ func (s *Storage) Put(args *PutArgs, reply *bool) (err error) {
 
 type DeleteArgs struct {
 	Key []byte
-	Id  uint64
+	Ver uint64
 }
 
 func (s *Storage) Delete(args *DeleteArgs, reply *bool) (err error) {
@@ -84,9 +84,9 @@ func (s *Storage) Delete(args *DeleteArgs, reply *bool) (err error) {
 		return fmt.Errorf("key %s not existed", args.Key)
 	}
 
-	if ditem.Id > args.Id {
+	if ditem.Ver > args.Ver {
 		*reply = false
-		return fmt.Errorf("Invaild Id %d", args.Id)
+		return fmt.Errorf("Invaild Id %d", args.Ver)
 	}
 	delete(s.db, key)
 	*reply = true

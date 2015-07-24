@@ -44,11 +44,17 @@ func TestNewRoute(t *testing.T) {
 }
 
 func TestSuccessorOf(t *testing.T) {
+
 	r := NewRoute(4)
+	node := r.SuccessorOf(new(big.Int).SetBytes(FullID))
+	if node != nil {
+		t.Errorf("Success Of failed :%s", node.ID)
+	}
+
 	AddRouteNode(r)
 
-	node := r.SuccessorOf(new(big.Int).SetBytes(FullID))
-	if node.ID != big.NewInt(2) {
-		t.Errorf("Success Of failed :%s", node.ID)
+	node = r.SuccessorOf(new(big.Int).SetBytes(FullID))
+	if node.ID.Cmp(big.NewInt(int64(2))) != 0 {
+		t.Errorf("Success Of failed :%x", node.ID)
 	}
 }
