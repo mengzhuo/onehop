@@ -92,3 +92,14 @@ func (s *Storage) Delete(args *DeleteArgs, reply *bool) (err error) {
 	*reply = true
 	return nil
 }
+
+func (s *Storage) Replicate(from string, reply *map[string]*Item) (err error) {
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	glog.Infof("Node %s Replicate from us, items:%d", from, len(s.db))
+
+	reply = &s.db
+	return
+}
