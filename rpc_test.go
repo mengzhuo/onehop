@@ -9,7 +9,7 @@ func TestStorePut(t *testing.T) {
 
 	r := RPCPool{make(map[string]*rpc.Client, 0)}
 
-	client, err := r.Get("10.5.4.152:7676")
+	client, err := r.Get("192.168.1.104:7676")
 	if err != nil {
 		t.Error(err)
 	}
@@ -28,7 +28,7 @@ func TestStoreGet(t *testing.T) {
 
 	r := RPCPool{make(map[string]*rpc.Client, 0)}
 
-	client, err := r.Get("10.5.4.152:7676")
+	client, err := r.Get("192.168.1.104:7676")
 	if err != nil {
 		t.Error(err)
 	}
@@ -43,14 +43,40 @@ func TestStoreGet(t *testing.T) {
 		t.Error(err)
 	}
 
-	var get Item
+	var get *Item
 	err = client.Call("Storage.Get", key, &get)
 	if err != nil {
 		t.Error(err)
 
 	}
-	if get.Ver != 6 || (string(get.Data) != string([]byte("ok"))) {
-		t.Errorf("Error on get %d -> %x <-", get.Ver, get.Data)
-		t.Errorf("Error on get %#v", get)
+
+	if get.Ver != 6 || (string(get.Data) != string([]byte("Data"))) {
+		t.Errorf("Error on get %x %s", key, get)
 	}
 }
+
+/*
+func TestStoreDelete(t *testing.T) {
+	r := RPCPool{make(map[string]*rpc.Client, 0)}
+
+	client, err := r.Get("192.168.1.104:7676")
+	if err != nil {
+		t.Error(err)
+	}
+
+	key := []byte("delete test")
+	item := &Item{6, []byte("Data")}
+	args := &PutArgs{key, item}
+	reply := new(bool)
+	err = client.Call("Storage.Put", args, reply)
+
+	reply = new(bool)
+	dargs := &DeleteArgs{key, item.Ver}
+	err = client.Call("Storage.Delete", dargs, reply)
+	if err != nil {
+		t.Error(err)
+
+	}
+
+}
+*/

@@ -75,10 +75,10 @@ func NewService(netType, address string, k, w, r int) *Service {
 		make([]Event, 0), make([]Event, 0), slice, n,
 		nil, nil, w, r, &RPCPool{make(map[string]*rpc.Client, 0)}}
 
-	rpc.HandleHTTP()
 	rpc.Register(service.db)
-
+	rpc.HandleHTTP()
 	go http.Serve(rpc_listener, nil)
+	glog.V(3).Infof("RPC Listener Accepted")
 	return service
 }
 

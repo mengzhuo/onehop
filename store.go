@@ -13,6 +13,10 @@ type Item struct {
 	Data []byte
 }
 
+func (i *Item) String() string {
+	return fmt.Sprintf("Ver:%d Data:%x", i.Ver, i.Data)
+}
+
 // Thread safe storage
 type Storage struct {
 	db map[string]*Item
@@ -35,15 +39,16 @@ func (s *Storage) Get(key []byte, reply *Item) error {
 
 	k := fmt.Sprintf("%x", key)
 
-	glog.V(3).Infof("Get Key %s", k)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	var ok bool
-	reply, ok = s.db[k]
+	r, ok := s.db[k]
 
 	if !ok {
 		return fmt.Errorf("key %s not existed", k)
 	}
+
+	reply = r
+	glog.V(3).Infof("Get Key %s %v", k, reply)
 	return nil
 }
 
@@ -52,7 +57,7 @@ func (s *Storage) Put(args *PutArgs, reply *bool) (err error) {
 	defer s.mu.Unlock()
 
 	key := fmt.Sprintf("%x", args.Key)
-	glog.V(3).Infof("Put Item %s %x", key, args.Item)
+	glog.V(3).Infof("Put Item %s %s", key, args.Item)
 
 	ditem, ok := s.db[key]
 	if !ok {
@@ -62,9 +67,11 @@ func (s *Storage) Put(args *PutArgs, reply *bool) (err error) {
 		return
 	}
 
-	if ditem.Ver > args.Item.Ver {
+	if ditem.Ver >= args.Item.Ver {
 		*reply = false
-		return fmt.Errorf("Invaild Id %d", args.Item.Ver)
+		err = fmt.Errorf("Invaild put request %x %s", key, args.Item)
+		glog.Error(err)
+		return err
 	}
 
 	s.db[key] = args.Item
