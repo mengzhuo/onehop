@@ -110,7 +110,9 @@ func (s *Storage) Replicate(from string, reply *map[string]*Item) (err error) {
 	defer s.mu.RUnlock()
 
 	glog.Infof("Node %s Replicate from us, items:%d", from, len(s.db))
-
-	reply = &s.db
+	if len(s.db) == 0 {
+		return fmt.Errorf("Nothing to replicated")
+	}
+	*reply = s.db
 	return
 }

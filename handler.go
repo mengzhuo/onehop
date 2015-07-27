@@ -35,10 +35,6 @@ func (s *Service) Handle(raddr *net.UDPAddr, msg *Msg) {
 		s.DoMessageExchange(raddr, msg)
 	case EVENT_NOTIFICATION:
 		s.DoEventNotification(raddr, msg)
-	case REPLICATE:
-		s.Replicate(raddr, msg)
-	case REPLICATE_RESPONSE:
-		s.ReplicateResponse(raddr, msg)
 	default:
 		glog.Infof("UnKnown message type %v", msg)
 		return
@@ -137,27 +133,40 @@ func (s *Service) BootStrapReponse(raddr *net.UDPAddr, msg *Msg) {
 	s.SendMsg(old_leader.Addr, msg)
 
 	// Replicate from siblings
-
+	id := s.id
 	for i := 0; i < s.R; i++ {
-		node := s.route.SuccessorOf(s.id)
+		node := s.route.SuccessorOf(id)
+
+		if node == s.selfNode {
+			glog.Error("Not enough node to replicate")
+			break
+		}
+
 		if node != nil {
 			s.goReplicate(node)
+			id = node.ID
 		}
 	}
 }
 
 func (s *Service) goReplicate(node *Node) {
+
 	client, err := s.RPCPool.Get(node.Addr.String())
+
 	if err != nil {
 		glog.Errorf("Replication failed on %x", node.ID)
 	}
+
 	var reply *map[string]*Item
-	client.Call("Replicate", s.id.String(), reply)
-	if reply == nil {
+
+	err = client.Call("Storage.Replicate", s.id.String(), &reply)
+
+	if err != nil {
 		glog.Errorf("Replication failed on %x return nil", node.ID)
 		return
 	}
 
+	glog.Infof("Replicated %d items from %s", len(*reply), node)
 	for k, v := range *reply {
 		s.db.db[k] = v
 	}

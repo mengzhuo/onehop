@@ -26,6 +26,9 @@ func (s *Slice) successorOf(id *big.Int) (n *Node) {
 	}
 
 	i := s.getID(id)
+	if i >= s.Len() {
+		return nil
+	}
 
 	if s.nodes[i].ID.Cmp(id) == 0 {
 		// ID in our nodes
