@@ -37,7 +37,7 @@ type PutArgs struct {
 
 func (s *Storage) Get(key []byte, reply *Item) error {
 
-	k := fmt.Sprintf("%x", key)
+	k := string(key)
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -46,8 +46,8 @@ func (s *Storage) Get(key []byte, reply *Item) error {
 	if !ok {
 		return fmt.Errorf("key %s not existed", k)
 	}
-
-	reply = r
+	// TODO wired pointer
+	*reply = *r
 	glog.V(3).Infof("Get Key %s %v", k, reply)
 	return nil
 }
@@ -56,7 +56,7 @@ func (s *Storage) Put(args *PutArgs, reply *bool) (err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	key := fmt.Sprintf("%x", args.Key)
+	key := string(args.Key)
 	glog.V(3).Infof("Put Item %s %s", key, args.Item)
 
 	ditem, ok := s.db[key]
@@ -89,7 +89,7 @@ func (s *Storage) Delete(args *DeleteArgs, reply *bool) (err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	key := fmt.Sprintf("%x", args.Key)
+	key := string(args.Key)
 	ditem, ok := s.db[key]
 	if !ok {
 		return fmt.Errorf("key %s not existed", args.Key)
