@@ -48,7 +48,12 @@ func (s *Slice) predecessorOf(id *big.Int) (n *Node) {
 		// Faster query
 		return nil
 	}
+
 	i := s.getID(id)
+	if i == s.Len() {
+		return nil
+	}
+
 	if s.nodes[i].ID.Cmp(id) == 0 {
 		// ID in our nodes
 		if i-1 >= 0 {
@@ -65,7 +70,7 @@ func (u *Slice) getID(id *big.Int) (i int) {
 
 	i = sort.Search(len(u.nodes),
 		func(i int) bool {
-			return u.nodes[i].ID.Cmp(id) >= 0
+			return u.nodes[i].ID.Cmp(id) > 0
 		})
 	return i
 }
