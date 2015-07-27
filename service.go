@@ -314,7 +314,7 @@ func (s *Service) tick() {
 		emsg.Events = append(emsg.Events, Event{s.id, now, JOIN, s.conn.LocalAddr().String()})
 
 		// Each 22 seconds notify other slice leader about all nodes
-		if s.counter%22 == 0 {
+		if s.counter%21 == 0 {
 			for _, n := range s.selfSlice.nodes {
 				emsg.Events = append(emsg.Events, Event{n.ID, now, JOIN, n.Addr.String()})
 			}
@@ -338,7 +338,7 @@ func (s *Service) tick() {
 
 	} else {
 		// Each 13 seconds, tell our leader
-		if s.counter%13 == 0 {
+		if s.counter%11 == 0 {
 			msg := NewMsg(EVENT_NOTIFICATION, s.id,
 				[]Event{Event{s.id, now, JOIN, s.conn.LocalAddr().String()}})
 			s.SendMsg(s.selfSlice.Leader.Addr, msg)

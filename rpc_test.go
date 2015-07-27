@@ -1,10 +1,6 @@
 package onehop
 
-import (
-	"net/rpc"
-	"testing"
-)
-
+/*
 func TestStorePut(t *testing.T) {
 
 	r := RPCPool{make(map[string]*rpc.Client, 0)}

@@ -26,7 +26,7 @@ func (s *Slice) successorOf(id *big.Int) (n *Node) {
 	}
 
 	i := s.getID(id)
-	if i >= s.Len() {
+	if i == s.Len() {
 		return nil
 	}
 

@@ -50,3 +50,27 @@ func TestSliceDelete(t *testing.T) {
 		t.Errorf("Delete failed")
 	}
 }
+
+func TestSliceSuccessorOf(t *testing.T) {
+	s := newSlice()
+	n := s.successorOf(big.NewInt(int64(8)))
+	if n.ID.Cmp(big.NewInt(int64(10))) != 0 {
+		t.Errorf("SS failed:%s", n)
+	}
+	n = s.successorOf(big.NewInt(int64(2)))
+	if n != nil {
+		t.Errorf("SS failed:%s", n)
+	}
+}
+
+func TestSlicePredecessorOf(t *testing.T) {
+	s := newSlice()
+	n := s.predecessorOf(big.NewInt(int64(8)))
+	if n.ID.Cmp(big.NewInt(int64(6))) != 0 {
+		t.Errorf("SP failed:%s", n)
+	}
+	n = s.predecessorOf(new(big.Int).SetBytes([]byte{0xe}))
+	if n != nil {
+		t.Errorf("SP failed:%s", n)
+	}
+}
