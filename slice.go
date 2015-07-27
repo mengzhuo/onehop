@@ -50,7 +50,7 @@ func (s *Slice) predecessorOf(id *big.Int) (n *Node) {
 	}
 
 	i := s.getID(id)
-	if i == s.Len() {
+	if i >= s.Len() {
 		return nil
 	}
 
@@ -70,7 +70,7 @@ func (u *Slice) getID(id *big.Int) (i int) {
 
 	i = sort.Search(len(u.nodes),
 		func(i int) bool {
-			return u.nodes[i].ID.Cmp(id) > 0
+			return u.nodes[i].ID.Cmp(id) >= 0
 		})
 	return i
 }

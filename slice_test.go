@@ -57,9 +57,9 @@ func TestSliceSuccessorOf(t *testing.T) {
 	if n.ID.Cmp(big.NewInt(int64(10))) != 0 {
 		t.Errorf("SS failed:%s", n)
 	}
-	n = s.successorOf(big.NewInt(int64(2)))
+	n = s.successorOf(new(big.Int).SetBytes([]byte{0xe}))
 	if n != nil {
-		t.Errorf("SS failed:%s", n)
+		t.Errorf("SP failed:%s", n)
 	}
 }
 
@@ -69,8 +69,28 @@ func TestSlicePredecessorOf(t *testing.T) {
 	if n.ID.Cmp(big.NewInt(int64(6))) != 0 {
 		t.Errorf("SP failed:%s", n)
 	}
-	n = s.predecessorOf(new(big.Int).SetBytes([]byte{0xe}))
+	n = s.predecessorOf(big.NewInt(int64(2)))
 	if n != nil {
-		t.Errorf("SP failed:%s", n)
+		t.Errorf("SS failed:%s", n)
+	}
+}
+
+func TestPreSucSame(t *testing.T) {
+
+	s := newSlice()
+	s.nodes = s.nodes[:3]
+	sn := s.successorOf(big.NewInt(int64(4)))
+	pn := s.predecessorOf(big.NewInt(int64(4)))
+
+	if sn == pn {
+		t.Errorf("SN:%s, PN:%s", sn, pn)
+	}
+
+	s.nodes = s.nodes[:2]
+	sn = s.successorOf(big.NewInt(int64(4)))
+	pn = s.predecessorOf(big.NewInt(int64(4)))
+
+	if sn == pn {
+		t.Errorf("SN:%s, PN:%s", sn, pn)
 	}
 }

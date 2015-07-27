@@ -2,6 +2,7 @@ package onehop
 
 import (
 	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -96,7 +97,6 @@ func (s *Service) Get(key []byte) *Item {
 	id := BytesToId(key)
 
 	for i := 0; i < s.R; i++ {
-		glog.V(1).Infof("Get Item %x", id)
 		node := s.route.SuccessorOf(id)
 
 		glog.V(3).Infof("Get Found SuccessorOf %x is %s", id, node)
@@ -130,10 +130,10 @@ func (s *Service) Get(key []byte) *Item {
 			s.route.Delete(node.ID)
 			continue
 		}
-		glog.V(1).Infof("Get %x From:%s", key, node.Addr)
 		var reply *Item
 		err = client.Call("Storage.Get", key, &reply)
-		if err != nil && reply != nil {
+		glog.V(1).Infof("Get %x From:%s", key, node.Addr)
+		if err == nil && reply != nil {
 			glog.V(1).Infof("Get reply %s", reply)
 			items = append(items, reply)
 		}
@@ -158,7 +158,11 @@ func (s *Service) Get(key []byte) *Item {
 }
 
 func (s *Service) PutByString(key string, item *Item) int {
-	k := []byte(key)
+	k, err := hex.DecodeString(key)
+	if err != nil {
+		glog.Error(err)
+		return 0
+	}
 	return s.Put(k, item)
 }
 
@@ -202,7 +206,7 @@ func (s *Service) Put(key []byte, item *Item) (count int) {
 			id = node.ID
 			continue
 		}
-		glog.V(3).Infof("Put to %s", node.Addr.String())
+		glog.V(1).Infof("Put %x to %s", key, node.Addr.String())
 		client, err := s.RPCPool.Get(node.Addr.String())
 		if err != nil {
 			glog.Error(err)
@@ -213,7 +217,7 @@ func (s *Service) Put(key []byte, item *Item) (count int) {
 		args := &PutArgs{key, item}
 
 		var reply *bool
-		err = client.Call("Storage.Put", args, reply)
+		err = client.Call("Storage.Put", args, &reply)
 		if err == nil {
 			count += 1
 		}
@@ -267,15 +271,21 @@ func BytesToId(p []byte) (b *big.Int) {
 func (s *Service) tick() {
 
 	now := time.Now()
+	s.selfNode.updateAt = now
+
 	// After 128 second it will trigger all node to sync data
 	for _, slice := range s.route.slices {
 
 		if slice.Leader != nil && slice.Leader != s.selfNode &&
-			slice.Leader.updateAt.Add(SLICE_LEADER_TIMEOUT).Before(now) {
+			time.Since(slice.Leader.updateAt).Seconds() > 10 {
 			// Timeouted
 			glog.Errorf("Slice Leader %s timeout", slice.Leader)
 			s.NotifySliceLeader(slice.Leader, LEAVE)
 			s.route.Delete(slice.Leader.ID)
+			// Give new leader a chance
+			if slice.Leader != nil {
+				slice.Leader.updateAt = now
+			}
 		}
 	}
 
@@ -315,8 +325,21 @@ func (s *Service) tick() {
 
 		// Each 22 seconds notify other slice leader about all nodes
 		if s.counter%21 == 0 {
+
+			to_delete := make([]*Node, 0)
 			for _, n := range s.selfSlice.nodes {
-				emsg.Events = append(emsg.Events, Event{n.ID, now, JOIN, n.Addr.String()})
+
+				status := JOIN
+
+				if time.Since(n.updateAt).Seconds() > 30 {
+					status = LEAVE
+					to_delete = append(to_delete, n)
+				}
+
+				emsg.Events = append(emsg.Events, Event{n.ID, now, status, n.Addr.String()})
+			}
+			for _, n := range to_delete {
+				s.route.Delete(n.ID)
 			}
 		}
 		s.Exchange(emsg)
@@ -331,9 +354,9 @@ func (s *Service) tick() {
 		}
 
 		pn := s.selfSlice.predecessorOf(s.id)
-		if pn != nil {
+		if pn != nil && pn != n {
 			s.SendMsg(pn.Addr, msg)
-			s.rightPonger = n
+			s.rightPonger = pn
 		}
 
 	} else {

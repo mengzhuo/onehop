@@ -159,7 +159,7 @@ func (s *Service) goReplicate(node *Node) {
 
 	var reply *map[string]*Item
 
-	err = client.Call("Storage.Replicate", s.id.String(), &reply)
+	err = client.Call("Storage.Replicate", s.selfNode.ID.String(), &reply)
 
 	if err != nil {
 		glog.Errorf("Replication failed on %x return nil", node.ID)
