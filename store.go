@@ -57,7 +57,7 @@ func (s *Storage) Put(args *PutArgs, reply *bool) (err error) {
 	defer s.mu.Unlock()
 
 	key := string(args.Key)
-	glog.V(3).Infof("Put Item %s %s", key, args.Item)
+	glog.V(3).Infof("Put Item %x %s", key, args.Item)
 
 	ditem, ok := s.db[key]
 	if !ok {
@@ -92,7 +92,7 @@ func (s *Storage) Delete(args *DeleteArgs, reply *bool) (err error) {
 	key := string(args.Key)
 	ditem, ok := s.db[key]
 	if !ok {
-		return fmt.Errorf("key %s not existed", args.Key)
+		return fmt.Errorf("key %x not existed", args.Key)
 	}
 
 	if ditem.Ver > args.Ver {

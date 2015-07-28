@@ -207,23 +207,36 @@ func (s *Service) Put(key []byte, item *Item) (count int) {
 			continue
 		}
 		glog.V(1).Infof("Put %x to %s", key, node.Addr.String())
+		id = node.ID
+
 		client, err := s.RPCPool.Get(node.Addr.String())
-		if err != nil {
-			glog.Error(err)
-			s.NotifySliceLeader(node, LEAVE)
-			s.route.Delete(node.ID)
+		if s.RPCError(err, node) {
 			continue
 		}
-		args := &PutArgs{key, item}
 
+		args := &PutArgs{key, item}
 		var reply *bool
 		err = client.Call("Storage.Put", args, &reply)
-		if err == nil {
+		if !s.RPCError(err, node) {
 			count += 1
 		}
-		id = node.ID
 	}
 	return
+}
+
+func (s *Service) RPCError(err error, node *Node) bool {
+	if err != nil {
+		glog.Errorf("Node:%x %#v", node.ID, err)
+		switch err.(type) {
+
+		case *net.OpError:
+			glog.Error("RPC call failed")
+			s.NotifySliceLeader(node, LEAVE)
+			s.route.Delete(node.ID)
+		}
+		return true
+	}
+	return false
 }
 
 func (s *Service) ID() *big.Int {
@@ -273,11 +286,11 @@ func (s *Service) tick() {
 	now := time.Now()
 	s.selfNode.updateAt = now
 
-	// After 128 second it will trigger all node to sync data
+	// Check all slice leaders
 	for _, slice := range s.route.slices {
 
 		if slice.Leader != nil && slice.Leader != s.selfNode &&
-			time.Since(slice.Leader.updateAt).Seconds() > 10 {
+			time.Since(slice.Leader.updateAt).Seconds() > SLICE_LEADER_TIMEOUT {
 			// Timeouted
 			glog.Errorf("Slice Leader %s timeout", slice.Leader)
 			s.NotifySliceLeader(slice.Leader, LEAVE)
@@ -290,7 +303,7 @@ func (s *Service) tick() {
 	}
 
 	if s.pinger != nil && s.pinger != s.selfNode &&
-		s.pinger.updateAt.Add(NODE_TIMEOUT).Before(now) {
+		time.Since(s.pinger.updateAt).Seconds() > NODE_TIMEOUT {
 		// Timeouted
 		glog.Errorf("Pinger %s timeout", s.pinger)
 		s.NotifySliceLeader(s.pinger, LEAVE)
@@ -299,7 +312,7 @@ func (s *Service) tick() {
 	}
 
 	if s.leftPonger != nil && s.leftPonger != s.selfNode &&
-		s.leftPonger.updateAt.Add(NODE_TIMEOUT).Before(now) {
+		time.Since(s.leftPonger.updateAt).Seconds() > NODE_TIMEOUT {
 		// Timeouted
 		glog.Errorf("Left Ponger %s timeout", s.leftPonger)
 		s.NotifySliceLeader(s.leftPonger, LEAVE)
@@ -308,7 +321,7 @@ func (s *Service) tick() {
 	}
 
 	if s.rightPonger != nil && s.rightPonger != s.selfNode &&
-		s.rightPonger.updateAt.Add(NODE_TIMEOUT).Before(now) {
+		time.Since(s.rightPonger.updateAt).Seconds() > NODE_TIMEOUT {
 		// Timeouted
 		glog.Errorf("Right Ponger %s timeout", s.rightPonger)
 		s.NotifySliceLeader(s.rightPonger, LEAVE)
@@ -323,7 +336,7 @@ func (s *Service) tick() {
 		emsg := NewMsg(MESSAGE_EXCHANGE, s.ID(), s.notifyEvent)
 		emsg.Events = append(emsg.Events, Event{s.id, now, JOIN, s.conn.LocalAddr().String()})
 
-		// Each 22 seconds notify other slice leader about all nodes
+		// Each 21 seconds notify other slice leader about all our nodes
 		if s.counter%21 == 0 {
 
 			to_delete := make([]*Node, 0)
@@ -331,17 +344,20 @@ func (s *Service) tick() {
 
 				status := JOIN
 
-				if time.Since(n.updateAt).Seconds() > 30 {
+				if time.Since(n.updateAt).Seconds() > NODE_TIMEOUT {
 					status = LEAVE
 					to_delete = append(to_delete, n)
 				}
 
-				emsg.Events = append(emsg.Events, Event{n.ID, now, status, n.Addr.String()})
+				emsg.Events = append(emsg.Events,
+					Event{n.ID, now, status, n.Addr.String()})
 			}
+
 			for _, n := range to_delete {
 				s.route.Delete(n.ID)
 			}
 		}
+
 		s.Exchange(emsg)
 
 		emsg.Events = append(emsg.Events, s.exchangeEvent...)
@@ -360,10 +376,11 @@ func (s *Service) tick() {
 		}
 
 	} else {
-		// Each 13 seconds, tell our leader
-		if s.counter%11 == 0 {
+		// Each 13 seconds, tell our leader our existence
+		if s.counter%(NODE_TIMEOUT/3) == 0 {
 			msg := NewMsg(EVENT_NOTIFICATION, s.id,
-				[]Event{Event{s.id, now, JOIN, s.conn.LocalAddr().String()}})
+				[]Event{Event{s.id, now, JOIN,
+					s.conn.LocalAddr().String()}})
 			s.SendMsg(s.selfSlice.Leader.Addr, msg)
 		}
 	}
@@ -427,17 +444,15 @@ func (s *Service) NotifySliceLeader(n *Node, status byte) {
 	slice := s.selfSlice
 
 	if slice.Leader == nil {
-		glog.Errorf("Something is wrong!!! we are still in the slice and there is no slice leader?")
-		return
+		glog.Fatal("Something is wrong!!! we are still in the slice and there is no slice leader?")
 	}
 	glog.V(5).Infof("Notify Slice leader about  %s", n)
 	e := Event{n.ID, time.Now(), status, n.Addr.String()}
 
-	if s.IAmSliceLeader() {
+	s.exchangeEvent = append(s.exchangeEvent, e)
+
+	if !s.IAmSliceLeader() {
 		// we are leader now
-		s.exchangeEvent = append(s.exchangeEvent, e)
-		return
-	} else {
 		msg := new(Msg)
 		msg.NewID()
 		msg.From = s.id

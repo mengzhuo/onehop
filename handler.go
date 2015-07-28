@@ -8,9 +8,9 @@ import (
 )
 
 const (
-	SLICE_LEADER_TIMEOUT = 6 * time.Second
-	EVENT_TIMEOUT        = 5 * time.Second
-	NODE_TIMEOUT         = 10 * time.Second
+	SLICE_LEADER_TIMEOUT = 6
+	EVENT_TIMEOUT        = 5
+	NODE_TIMEOUT         = 30
 )
 
 func (s *Service) Handle(raddr *net.UDPAddr, msg *Msg) {
@@ -201,7 +201,7 @@ func (s *Service) handleEvents(msg *Msg) {
 
 	for _, e := range msg.Events {
 
-		if e.Time.Add(EVENT_TIMEOUT).Before(time.Now()) {
+		if time.Since(e.Time).Seconds() > EVENT_TIMEOUT {
 			glog.Infof("Recv timeouted event:%v", e)
 			continue
 		}
@@ -217,39 +217,20 @@ func (s *Service) handleEvents(msg *Msg) {
 				s.route.Add(e.ToNode())
 			}
 		case LEAVE:
+
+			switch {
+			case s.pinger != nil && e.ID.Cmp(s.pinger.ID) == 0:
+				s.pinger = nil
+			case s.leftPonger != nil && e.ID.Cmp(s.leftPonger.ID) == 0:
+				s.leftPonger = nil
+			case s.rightPonger != nil && e.ID.Cmp(s.rightPonger.ID) == 0:
+				s.rightPonger = nil
+			}
+
 			s.route.Delete(e.ID)
 		}
 	}
 
-}
-
-func (s *Service) Replicate(raddr *net.UDPAddr, msg *Msg) {
-
-	glog.V(4).Infof("Recv Replicate:%s", msg)
-
-	events := make([]Event, 0)
-
-	for _, slice := range s.route.slices {
-
-		for _, node := range slice.nodes {
-			e := Event{node.ID, time.Now(), JOIN, node.Addr.String()}
-			events = append(events, e)
-		}
-	}
-
-	for i := 100; i < len(events); i += 100 {
-		msg.Events = events[i-100 : i]
-		msg.Type = REPLICATE_RESPONSE
-		msg.From = s.ID()
-		glog.V(9).Infof("Send replicate %s", msg)
-		s.SendMsg(raddr, msg)
-	}
-}
-
-func (s *Service) ReplicateResponse(raddr *net.UDPAddr, msg *Msg) {
-	// we don't need to reponse with this
-	glog.V(4).Infof("Recv Replicate Response:%s", msg)
-	s.handleEvents(msg)
 }
 
 func (s *Service) KeepAlive(raddr *net.UDPAddr, msg *Msg) {
