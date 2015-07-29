@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	SLICE_LEADER_TIMEOUT = 6
+	SLICE_LEADER_TIMEOUT = 15
 	EVENT_TIMEOUT        = 5
 	NODE_TIMEOUT         = 30
 )

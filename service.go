@@ -378,7 +378,7 @@ func (s *Service) tick() {
 	} else {
 		// Each 13 seconds, tell our leader our existence
 		if s.selfSlice.Leader != s.pinger &&
-			s.counter%(NODE_TIMEOUT/3) == 0 {
+			s.counter%(10) == 0 {
 			msg := NewMsg(EVENT_NOTIFICATION, s.id,
 				[]Event{Event{s.id, now, JOIN,
 					s.conn.LocalAddr().String()}})
