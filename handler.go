@@ -9,7 +9,7 @@ import (
 
 const (
 	SLICE_LEADER_TIMEOUT = 15
-	EVENT_TIMEOUT        = 5
+	EVENT_TIMEOUT        = 20
 	NODE_TIMEOUT         = 30
 )
 
@@ -203,9 +203,6 @@ func (s *Service) handleEvents(msg *Msg) {
 
 		if time.Since(e.Time).Seconds() > EVENT_TIMEOUT {
 			glog.Infof("Recv timeouted event:%v", e)
-			continue
-		}
-		if e.ID.Cmp(s.id) == 0 {
 			continue
 		}
 

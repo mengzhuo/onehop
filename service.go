@@ -67,7 +67,7 @@ func NewService(netType, address string, k, w, r int) *Service {
 	n := &Node{ID: id, Addr: listener.LocalAddr().(*net.UDPAddr)}
 	route.Add(n)
 
-	eventTicker := time.NewTicker(1 * time.Second)
+	eventTicker := time.NewTicker(3 * time.Second)
 	slice := route.slices[route.GetIndex(id)]
 
 	service = &Service{listener, route, uint8(0), NewStorage(),
@@ -337,7 +337,7 @@ func (s *Service) tick() {
 		emsg.Events = append(emsg.Events, Event{s.id, now, JOIN, s.conn.LocalAddr().String()})
 
 		// Each 21 seconds notify other slice leader about all our nodes
-		if s.counter%21 == 0 {
+		if s.counter%7 == 0 {
 
 			to_delete := make([]*Node, 0)
 			for _, n := range s.selfSlice.nodes {
@@ -356,6 +356,7 @@ func (s *Service) tick() {
 			for _, n := range to_delete {
 				s.route.Delete(n.ID)
 			}
+			s.selfSlice.updateLeader()
 		}
 
 		s.Exchange(emsg)
@@ -376,9 +377,9 @@ func (s *Service) tick() {
 		}
 
 	} else {
-		// Each 13 seconds, tell our leader our existence
+		// Each 9 seconds, tell our leader our existence
 		if s.selfSlice.Leader != s.pinger &&
-			s.counter%(10) == 0 {
+			s.counter%3 == 0 {
 			msg := NewMsg(EVENT_NOTIFICATION, s.id,
 				[]Event{Event{s.id, now, JOIN,
 					s.conn.LocalAddr().String()}})
