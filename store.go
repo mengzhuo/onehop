@@ -44,11 +44,11 @@ func (s *Storage) Get(key []byte, reply *Item) error {
 	r, ok := s.db[k]
 
 	if !ok {
-		return fmt.Errorf("key %s not existed", k)
+		return fmt.Errorf("key %x not existed", key)
 	}
 	// TODO wired pointer
 	*reply = *r
-	glog.V(3).Infof("Get Key %s %v", k, reply)
+	glog.V(3).Infof("Get Key %x %v", key, reply)
 	return nil
 }
 
@@ -57,7 +57,7 @@ func (s *Storage) Put(args *PutArgs, reply *bool) (err error) {
 	defer s.mu.Unlock()
 
 	key := string(args.Key)
-	glog.V(3).Infof("Put Item %x %s", key, args.Item)
+	glog.V(3).Infof("Put Item %x %s", args.Key, args.Item)
 
 	ditem, ok := s.db[key]
 	if !ok {
@@ -69,37 +69,12 @@ func (s *Storage) Put(args *PutArgs, reply *bool) (err error) {
 
 	if ditem.Ver >= args.Item.Ver {
 		*reply = false
-		err = fmt.Errorf("Invaild put request %x %s", key, args.Item)
+		err = fmt.Errorf("Invaild put request %x %s", args.Key, args.Item)
 		glog.Error(err)
 		return err
 	}
 
 	s.db[key] = args.Item
-	*reply = true
-	return nil
-}
-
-type DeleteArgs struct {
-	Key []byte
-	Ver uint64
-}
-
-func (s *Storage) Delete(args *DeleteArgs, reply *bool) (err error) {
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	key := string(args.Key)
-	ditem, ok := s.db[key]
-	if !ok {
-		return fmt.Errorf("key %x not existed", args.Key)
-	}
-
-	if ditem.Ver > args.Ver {
-		*reply = false
-		return fmt.Errorf("Invaild Id %d", args.Ver)
-	}
-	delete(s.db, key)
 	*reply = true
 	return nil
 }

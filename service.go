@@ -338,7 +338,6 @@ func (s *Service) tick() {
 
 		// Each 21 seconds notify other slice leader about all our nodes
 		if s.counter%7 == 0 {
-
 			to_delete := make([]*Node, 0)
 			for _, n := range s.selfSlice.nodes {
 
