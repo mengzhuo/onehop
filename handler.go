@@ -44,8 +44,10 @@ func (s *Service) Handle(raddr *net.UDPAddr, msg *Msg) {
 		n := s.route.GetNode(msg.From)
 		if n != nil {
 			n.updateAt = time.Now()
+		} else {
+			n = &Node{msg.From, raddr, time.Now()}
+			s.route.Add(n)
 		}
-
 	case MESSAGE_EXCHANGE:
 		s.DoMessageExchange(raddr, msg)
 	case EVENT_NOTIFICATION:
