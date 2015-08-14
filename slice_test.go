@@ -1,24 +1,30 @@
 package onehop
 
 import (
-	"math/big"
 	"testing"
+	"time"
 )
 
 func newSlice() *Slice {
-	s := NewRoute(2)
-	AddRouteNode(s)
-	return s.slices[0]
 
+	s := NewSlice(ZERO_ID, FULL_ID)
+
+	for id := 0; id < 32; id += 2 {
+
+		s.Add(&Node{BytesToId([]byte{byte(id)}),
+			nil, time.Now()})
+	}
+
+	return s
 }
 
 func TestSliceAdd(t *testing.T) {
 	s := newSlice()
-	n := s.Get(big.NewInt(int64(8)))
+	n := s.Get(BytesToId([]byte{16}))
 	if n == nil {
-		t.Errorf("Get error")
+		t.Errorf("Get error %s", n)
 	}
-	if s.Leader != n {
+	if s.Leader() != n {
 		t.Errorf("Wrong leader")
 
 	}
@@ -26,38 +32,38 @@ func TestSliceAdd(t *testing.T) {
 
 func TestSliceDelete(t *testing.T) {
 	s := newSlice()
-	ok := s.Delete(big.NewInt(int64(8)))
+	ok := s.Delete(BytesToId([]byte{16}))
 	if !ok {
 		t.Errorf("delete failed")
 	}
 
-	if s.Len() != 6 {
+	if s.Len() != 15 {
 		t.Errorf("delete failed %d", s.Len())
 	}
 
-	if s.Leader.ID.Cmp(big.NewInt(int64(10))) != 0 {
-		t.Errorf("Delete failed")
+	if s.Leader().ID != BytesToId([]byte{14}) {
+		t.Error("Delete failed", s.Leader().ID)
 	}
 
-	ok = s.Delete(big.NewInt(int64(2)))
+	ok = s.Delete(BytesToId([]byte{30}))
 	if !ok {
 		t.Errorf("delete failed")
 	}
-	if s.Len() != 5 {
+	if s.Len() != 14 {
 		t.Errorf("delete failed %d", s.Len())
 	}
-	if s.Leader.ID.Cmp(big.NewInt(int64(10))) != 0 {
-		t.Errorf("Delete failed")
+	if s.Leader().ID != BytesToId([]byte{14}) {
+		t.Error("Delete failed", s.Leader())
 	}
 }
 
 func TestSliceSuccessorOf(t *testing.T) {
 	s := newSlice()
-	n := s.successorOf(big.NewInt(int64(8)))
-	if n.ID.Cmp(big.NewInt(int64(10))) != 0 {
+	n := s.successorOf(BytesToId([]byte{8}))
+	if n.ID != BytesToId([]byte{10}) {
 		t.Errorf("SS failed:%s", n)
 	}
-	n = s.successorOf(new(big.Int).SetBytes([]byte{0xe}))
+	n = s.successorOf(BytesToId([]byte{32}))
 	if n != nil {
 		t.Errorf("SP failed:%s", n)
 	}
@@ -65,11 +71,11 @@ func TestSliceSuccessorOf(t *testing.T) {
 
 func TestSlicePredecessorOf(t *testing.T) {
 	s := newSlice()
-	n := s.predecessorOf(big.NewInt(int64(8)))
-	if n.ID.Cmp(big.NewInt(int64(6))) != 0 {
+	n := s.predecessorOf(BytesToId([]byte{8}))
+	if n.ID != BytesToId([]byte{6}) {
 		t.Errorf("SP failed:%s", n)
 	}
-	n = s.predecessorOf(big.NewInt(int64(2)))
+	n = s.predecessorOf(BytesToId([]byte{0}))
 	if n != nil {
 		t.Errorf("SS failed:%s", n)
 	}
@@ -78,17 +84,17 @@ func TestSlicePredecessorOf(t *testing.T) {
 func TestPreSucSame(t *testing.T) {
 
 	s := newSlice()
-	s.nodes = s.nodes[:3]
-	sn := s.successorOf(big.NewInt(int64(4)))
-	pn := s.predecessorOf(big.NewInt(int64(4)))
+	s.Nodes = s.Nodes[:3]
+	sn := s.successorOf(BytesToId([]byte{4}))
+	pn := s.predecessorOf(BytesToId([]byte{4}))
 
 	if sn == pn {
 		t.Errorf("SN:%s, PN:%s", sn, pn)
 	}
 
-	s.nodes = s.nodes[:2]
-	sn = s.successorOf(big.NewInt(int64(4)))
-	pn = s.predecessorOf(big.NewInt(int64(4)))
+	s.Nodes = s.Nodes[:2]
+	sn = s.successorOf(BytesToId([]byte{4}))
+	pn = s.predecessorOf(BytesToId([]byte{4}))
 
 	if sn == pn {
 		t.Errorf("SN:%s, PN:%s", sn, pn)

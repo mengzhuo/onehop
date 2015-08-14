@@ -2,14 +2,10 @@ package onehop
 
 import (
 	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math/big"
 	"net"
-	"net/http"
-	"net/rpc"
-	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -21,9 +17,9 @@ type Service struct {
 	route   *Route
 	counter uint8
 
-	db       *Storage
-	bytePool *BytePool
-	id       *big.Int
+	//db       *Storage
+	//bytePool *BytePool
+	id       string
 	selfNode *Node
 
 	ticker *time.Ticker
@@ -36,7 +32,7 @@ type Service struct {
 	leftPonger  *Node
 	rightPonger *Node
 	W, R        int
-	RPCPool     *RPCPool
+	//RPCPool     *RPCPool
 }
 
 // NetType, Address for UDP connection
@@ -47,49 +43,41 @@ func NewService(netType, address string, k, w, r int) *Service {
 	if err != nil {
 		panic(err)
 	}
-	port := strings.SplitN(address, ":", 2)
-	rpc_listener, err := net.Listen("tcp", fmt.Sprintf(":%s", port[1]))
 	if err != nil {
 		panic(err)
 	}
 
 	glog.Infof("Listening to :%s %s", netType, address)
 	route = NewRoute(k)
-	bp := &BytePool{make(chan []byte, 1024), 16 * 1024}
 	max := new(big.Int).SetBytes(FullID)
 
-	id, err := rand.Int(rand.Reader, max)
+	vid, err := rand.Int(rand.Reader, max)
 	if err != nil {
 		panic(err)
 	}
+
+	id := BytesToId(vid.Bytes())
 	glog.Infof("initial id:%x", id)
 
-	n := &Node{ID: id, Addr: listener.LocalAddr().(*net.UDPAddr)}
+	n := &Node{ID: id,
+		Addr: listener.LocalAddr().(*net.UDPAddr)}
 	route.Add(n)
 
 	eventTicker := time.NewTicker(3 * time.Second)
 	slice := route.slices[route.GetIndex(id)]
 
-	service = &Service{listener, route, uint8(0), NewStorage(),
-		bp, id, n,
+	service = &Service{
+		listener, route, uint8(0),
+		id, n,
 		eventTicker,
 		make([]Event, 0), make([]Event, 0), slice, n,
-		nil, nil, w, r, &RPCPool{make(map[string]*rpc.Client, 0)}}
+		nil, nil, w, r}
 
-	rpc.Register(service.db)
-	rpc.HandleHTTP()
-	go http.Serve(rpc_listener, nil)
 	glog.V(3).Infof("RPC Listener Accepted")
 	return service
 }
 
-func (s *Service) GetByString(key string) *Item {
-
-	k := []byte(key)
-	return s.Get(k)
-
-}
-
+/*
 func (s *Service) Get(key []byte) *Item {
 
 	items := make([]*Item, 0)
@@ -223,7 +211,7 @@ func (s *Service) Put(key []byte, item *Item) (count int) {
 	}
 	return
 }
-
+*/
 func (s *Service) RPCError(err error, node *Node) bool {
 	if err != nil {
 		glog.Errorf("Node:%x %#v", node.ID, err)
@@ -239,32 +227,6 @@ func (s *Service) RPCError(err error, node *Node) bool {
 	return false
 }
 
-func (s *Service) ID() *big.Int {
-	return new(big.Int).SetBytes(s.id.Bytes())
-}
-
-func (s *Service) IAmSliceLeader() (answer bool) {
-
-	// s.selfSlice leader should not be nil
-	// it's fair that raise a panic if this happen
-
-	if s.selfSlice.Leader == s.selfNode {
-		answer = true
-	}
-	return
-}
-
-func (s *Service) Tick() {
-
-	for {
-		select {
-		case _ = <-s.ticker.C:
-			s.tick()
-		}
-	}
-
-}
-
 func (s *Service) BootStrapFrom(address string) {
 
 	glog.Infof("BootStrap From :%s", address)
@@ -275,134 +237,19 @@ func (s *Service) BootStrapFrom(address string) {
 	s.SendMsg(addr, msg)
 }
 
-func BytesToId(p []byte) (b *big.Int) {
-	b = new(big.Int)
-	b.SetBytes(p)
-	return
-}
-
-func (s *Service) tick() {
-
-	now := time.Now()
-	s.selfNode.updateAt = now
-
-	// Check all slice leaders
-	for _, slice := range s.route.slices {
-
-		if slice.Leader != nil && slice.Leader != s.selfNode &&
-			time.Since(slice.Leader.updateAt).Seconds() > SLICE_LEADER_TIMEOUT {
-			// Timeouted
-			glog.Errorf("Slice Leader %s timeout", slice.Leader)
-			s.NotifySliceLeader(slice.Leader, LEAVE)
-			s.route.Delete(slice.Leader.ID)
-			// Give new leader a chance
-			if slice.Leader != nil {
-				slice.Leader.updateAt = now
-			}
-		}
-	}
-
-	if s.pinger != nil && s.pinger != s.selfNode &&
-		time.Since(s.pinger.updateAt).Seconds() > NODE_TIMEOUT {
-		// Timeouted
-		glog.Errorf("Pinger %s timeout", s.pinger)
-		s.NotifySliceLeader(s.pinger, LEAVE)
-		s.route.Delete(s.pinger.ID)
-		s.pinger = nil
-	}
-
-	if s.leftPonger != nil && s.leftPonger != s.selfNode &&
-		time.Since(s.leftPonger.updateAt).Seconds() > NODE_TIMEOUT {
-		// Timeouted
-		glog.Errorf("Left Ponger %s timeout", s.leftPonger)
-		s.NotifySliceLeader(s.leftPonger, LEAVE)
-		s.route.Delete(s.leftPonger.ID)
-		s.leftPonger = nil
-	}
-
-	if s.rightPonger != nil && s.rightPonger != s.selfNode &&
-		time.Since(s.rightPonger.updateAt).Seconds() > NODE_TIMEOUT {
-		// Timeouted
-		glog.Errorf("Right Ponger %s timeout", s.rightPonger)
-		s.NotifySliceLeader(s.rightPonger, LEAVE)
-		s.route.Delete(s.rightPonger.ID)
-		s.rightPonger = nil
-	}
-
-	if s.IAmSliceLeader() {
-		// We are slice leader
-		// put all event_notify to unit leader
-		// And exchange with other slice leader
-		emsg := NewMsg(MESSAGE_EXCHANGE, s.ID(), s.notifyEvent)
-		emsg.Events = append(emsg.Events, Event{s.id, now, JOIN, s.conn.LocalAddr().String()})
-
-		// Each 21 seconds notify other slice leader about all our nodes
-		if s.counter%7 == 0 {
-			to_delete := make([]*Node, 0)
-			for _, n := range s.selfSlice.nodes {
-
-				status := JOIN
-
-				if time.Since(n.updateAt).Seconds() > NODE_TIMEOUT {
-					status = LEAVE
-					to_delete = append(to_delete, n)
-				}
-
-				emsg.Events = append(emsg.Events,
-					Event{n.ID, now, status, n.Addr.String()})
-			}
-
-			for _, n := range to_delete {
-				s.route.Delete(n.ID)
-			}
-			s.selfSlice.updateLeader()
-		}
-
-		s.Exchange(emsg)
-
-		emsg.Events = append(emsg.Events, s.exchangeEvent...)
-		msg := NewMsg(KEEP_ALIVE, s.ID(), emsg.Events)
-
-		n := s.selfSlice.successorOf(s.id)
-		if n != nil {
-			s.SendMsg(n.Addr, msg)
-			s.leftPonger = n
-		}
-
-		pn := s.selfSlice.predecessorOf(s.id)
-		if pn != nil && pn != n {
-			s.SendMsg(pn.Addr, msg)
-			s.rightPonger = pn
-		}
-
-	} else {
-		// Each 9 seconds, tell our leader our existence
-		if s.selfSlice.Leader != s.pinger &&
-			s.counter%3 == 0 {
-			msg := NewMsg(EVENT_NOTIFICATION, s.id,
-				[]Event{Event{s.id, now, JOIN,
-					s.conn.LocalAddr().String()}})
-			s.SendMsg(s.selfSlice.Leader.Addr, msg)
-		}
-	}
-
-	// Reset all events
-	s.exchangeEvent = s.exchangeEvent[:0]
-	s.notifyEvent = s.notifyEvent[:0]
-	s.counter += 1
+func BytesToId(p []byte) string {
+	return fmt.Sprintf("%032x", p)
 }
 
 func (s *Service) Listen() {
 
-	go service.Tick()
-
 	for {
 
-		p := s.bytePool.Get()
+		//p := s.bytePool.Get()
+		p := make([]byte, 1024)
 		n, addr, err := s.conn.ReadFromUDP(p)
 		if err != nil || n < 3 {
 			glog.Errorf("insufficient data for parsing...", addr, p[:n])
-			s.bytePool.Put(p)
 			continue
 		}
 
@@ -412,8 +259,7 @@ func (s *Service) Listen() {
 			panic(err)
 		}
 		glog.V(10).Infof("Recv From:%x TYPE:%s", msg.From, typeName[msg.Type])
-		s.Handle(addr, msg)
-		s.bytePool.Put(p)
+		//s.Handle(addr, msg)
 	}
 }
 
@@ -452,13 +298,4 @@ func (s *Service) NotifySliceLeader(n *Node, status byte) {
 
 	s.exchangeEvent = append(s.exchangeEvent, e)
 
-	if !s.IAmSliceLeader() {
-		// we are leader now
-		msg := new(Msg)
-		msg.NewID()
-		msg.From = s.id
-		msg.Events = append(msg.Events, e)
-		msg.Type = EVENT_NOTIFICATION
-		s.SendMsg(slice.Leader.Addr, msg)
-	}
 }

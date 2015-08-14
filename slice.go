@@ -7,15 +7,20 @@ import (
 	"github.com/golang/glog"
 )
 
+func NewSlice(min, max string) *Slice {
+	nodes := make(ByNodeID, 0)
+	return &Slice{min, max, nodes, &sync.RWMutex{}}
+}
+
 type Slice struct {
 	Min   string
 	Max   string
 	Nodes ByNodeID
-	*sync.Mutex
+	*sync.RWMutex
 }
 
 func (s *Slice) Len() int {
-	return len(s.nodes)
+	return len(s.Nodes)
 }
 
 func (s *Slice) successorOf(id string) (n *Node) {
@@ -30,7 +35,7 @@ func (s *Slice) successorOf(id string) (n *Node) {
 	if i >= s.Len()-1 {
 		return nil
 	}
-	return s.nodes[i+1]
+	return s.Nodes[i+1]
 }
 
 func (s *Slice) predecessorOf(id string) (n *Node) {
@@ -50,26 +55,26 @@ func (s *Slice) predecessorOf(id string) (n *Node) {
 
 func (u *Slice) getID(id string) (i int) {
 
-	i = sort.Search(len(u.nodes),
+	i = sort.Search(len(u.Nodes),
 		func(i int) bool {
-			return u.nodes[i] >= id
+			return u.Nodes[i].ID >= id
 		})
 	return i
 }
-func (u *Slice) Get(id string) (n *Node) {
+func (s *Slice) Get(id string) (n *Node) {
 
-	i := u.getID(id)
-	if i < len(u.nodes) && u.nodes[i].ID == id {
+	i := s.getID(id)
+	if i < len(s.Nodes) && s.Nodes[i].ID == id {
 		// ID in our nodes
-		return u.nodes[i]
+		return s.Nodes[i]
 	}
 	return nil
 }
 
-func (u *Slice) Leader() *Node {
+func (s *Slice) Leader() *Node {
 
-	if len(u.nodes) > 0 {
-		return u.nodes[len(u.nodes)/2]
+	if len(s.Nodes) > 0 {
+		return s.Nodes[len(s.Nodes)/2]
 	}
 
 	return nil
@@ -80,10 +85,10 @@ func (s *Slice) Delete(id string) bool {
 	s.Lock()
 	defer s.Unlock()
 
-	i := u.getID(id)
+	i := s.getID(id)
 
-	if i < len(s.nodes) && s.nodes[i].ID == id {
-		s.nodes = append(s.nodes[:i], s.nodes[i+1:]...)
+	if i < len(s.Nodes) && s.Nodes[i].ID == id {
+		s.Nodes = append(s.Nodes[:i], s.Nodes[i+1:]...)
 		glog.Infof("slice %s Delete %s", s.Max, id)
 		return true
 	}
@@ -101,8 +106,8 @@ func (s *Slice) Add(n *Node) bool {
 
 	if node := s.Get(n.ID); node == nil {
 		glog.Infof("Slice %s add %s", s.Max, n.ID)
-		s.nodes = append(s.nodes, n)
-		sort.Sort(s.nodes)
+		s.Nodes = append(s.Nodes, n)
+		sort.Sort(s.Nodes)
 	}
 	return true
 }
@@ -114,7 +119,7 @@ func (b ByNodeID) Len() int {
 }
 
 func (b ByNodeID) Less(i, j int) bool {
-	return b[i] < b[j]
+	return b[i].ID < b[j].ID
 }
 
 func (b ByNodeID) Swap(i, j int) {

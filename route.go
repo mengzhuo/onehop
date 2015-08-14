@@ -2,9 +2,16 @@
 package onehop
 
 import (
+	"math"
 	"math/big"
+	"strconv"
 
 	"github.com/golang/glog"
+)
+
+const (
+	ZERO_ID = "00000000000000000000000000000000"
+	FULL_ID = "ffffffffffffffffffffffffffffffff"
 )
 
 var (
@@ -18,6 +25,7 @@ var (
 type Route struct {
 	slices []*Slice
 	k      int // number of slices the ring is divided into
+	div    int
 	block  *big.Int
 }
 
@@ -29,16 +37,16 @@ func (r *Route) Len() int {
 	return count
 }
 
-func (r *Route) GetIndex(id *big.Int) (sliceidx int) {
+func (r *Route) GetIndex(id string) (sliceidx int) {
 
-	if id.Int64() == int64(0) {
-		return 0
+	idx, err := strconv.ParseUint(id[:r.div], 16, 0)
+	if err != nil {
+		glog.Error(err)
 	}
-	sliceidx = int(new(big.Int).Div(id, r.block).Int64())
-	return
+	return int(idx) % r.k
 }
 
-func (r *Route) GetNode(id *big.Int) (n *Node) {
+func (r *Route) GetNode(id string) (n *Node) {
 
 	slice_idx := r.GetIndex(id)
 	slice := r.slices[slice_idx]
@@ -49,15 +57,11 @@ func (r *Route) GetNode(id *big.Int) (n *Node) {
 func (r *Route) forward(slice_idx int) (sidx int) {
 
 	sidx = slice_idx
-	if sidx == r.k-1 {
-		sidx = 0
-	} else {
-		sidx++
-	}
-	return
+	sidx++
+	return sidx % r.k
 }
 
-func (r *Route) SuccessorOf(id *big.Int) (n *Node) {
+func (r *Route) SuccessorOf(id string) (n *Node) {
 
 	slice_idx := r.GetIndex(id)
 
@@ -70,7 +74,7 @@ func (r *Route) SuccessorOf(id *big.Int) (n *Node) {
 		}
 		slice_idx = r.forward(slice_idx)
 		// Reset to 0 for loop back
-		id = zeroID
+		id = ZERO_ID
 	}
 
 	return
@@ -80,19 +84,16 @@ func (r *Route) Add(n *Node) (ok bool) {
 
 	slice_idx := r.GetIndex(n.ID)
 	slice := r.slices[slice_idx]
-
-	result := slice.add(n)
-	slice.updateLeader()
+	result := slice.Add(n)
 
 	return result
 }
-func (r *Route) Delete(id *big.Int) (ok bool) {
+func (r *Route) Delete(id string) (ok bool) {
 
 	slice_idx := r.GetIndex(id)
 	slice := r.slices[slice_idx]
 
 	result := slice.Delete(id)
-	slice.updateLeader()
 	return result
 }
 
@@ -101,13 +102,12 @@ func NewRoute(k int) *Route {
 	if k < 2 {
 		panic("K  can't not less than 2")
 	}
+	div := int(math.Pow(float64(k), 1/16))
 	glog.Infof("starting route k=%d", k)
 	block := new(big.Int)
 	block.SetBytes(FullID)
 
 	block.Div(block, big.NewInt(int64(k)))
-	// TODO wired length issues on divied number
-
 	block.Add(block, big.NewInt(1))
 
 	max_num := new(big.Int)
@@ -116,20 +116,21 @@ func NewRoute(k int) *Route {
 	l := make([]*Slice, 0)
 
 	for i := int64(0); i < int64(k); i++ {
-		slice := new(Slice)
-		slice.Max = new(big.Int)
-		slice.Min = new(big.Int)
-		slice.Min.Mul(block, big.NewInt(i))
-		slice.Max.Mul(block, big.NewInt((i + 1)))
-		if slice.Max.Cmp(max_num) > 0 {
-			slice.Max.SetBytes(FullID)
+		max := new(big.Int)
+		min := new(big.Int)
+		min.Mul(block, big.NewInt(i))
+		max.Mul(block, big.NewInt((i + 1)))
+		if max.Cmp(max_num) > 0 {
+			max.SetBytes(FullID)
 		} else {
-			slice.Max.Sub(slice.Max, big.NewInt(int64(1)))
+			max.Sub(max, big.NewInt(int64(1)))
 		}
 
+		slice := NewSlice(
+			BytesToId(min.Bytes()),
+			BytesToId(max.Bytes()))
 		l = append(l, slice)
 	}
-	r := &Route{l, k, block}
-	route = r
+	r := &Route{l, k, div, block}
 	return r
 }
