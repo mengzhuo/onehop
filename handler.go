@@ -12,21 +12,13 @@ const (
 	NODE_TIMEOUT         = 30
 )
 
-func (s *Service) Handle(raddr *net.UDPAddr, msg *Msg) {
+func (s *Service) Handle(raddr *net.UDPAddr, msg *MsgHeader, events []*Event) {
 
-	local := s.conn.LocalAddr().String()
-	// We will not allow other say badthings about us
-	for _, e := range msg.Events {
-		if e.Addr == local && e.Status == LEAVE {
-			e.Status = JOIN
-		}
-	}
-
-	// Main handle function for ALL msg
 	switch msg.Type {
 
 	case BOOTSTRAP:
 	case BOOTSTRAP_RESPONSE:
+
 	case KEEP_ALIVE:
 	case KEEP_ALIVE_RESPONSE:
 	case MESSAGE_EXCHANGE:

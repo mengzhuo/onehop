@@ -1,11 +1,9 @@
 package onehop
 
-import (
-	"fmt"
-	"math/rand"
+const (
+	MSG_MAX_SIZE  = 8192
+	HEADER_LENGTH = 4
 )
-
-const MSG_MAX_SIZE = 8192
 
 // Message Type
 const (
@@ -45,29 +43,17 @@ const (
 	LEAVE
 )
 
-type Msg struct {
-	ID     int
-	Type   uint8
-	From   string
-	Events []Event
+type MsgHeader struct {
+	ID    uint8
+	Type  uint8
+	Count uint16
 }
 
-func (m *Msg) String() string {
-	return fmt.Sprintf("Msg:%d,Type:%s, From:%x, Events:%s",
-		m.ID, typeName[m.Type], m.From, m.Events)
+func ParseHeader(p []byte) *MsgHeader {
 
-}
-
-func NewMsg(typ uint8, f string, es []Event) *Msg {
-	msg := new(Msg)
-	msg.NewID()
-	msg.Type = typ
-	msg.From = f
-	msg.Events = es
-	return msg
-
-}
-
-func (m *Msg) NewID() {
-	m.ID = rand.Int()
+	h := new(MsgHeader)
+	h.ID = p[0]
+	h.Type = p[1]
+	h.Count = uint16(p[2])<<8 | uint16(p[3])
+	return h
 }

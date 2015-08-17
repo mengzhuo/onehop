@@ -9,6 +9,10 @@ func TestLeakyBuffer(t *testing.T) {
 
 	buf := NewLeakyBuffer(1024, 1024)
 	p := buf.Get()
+	if len(p) != 1024 {
+		t.Error("Length error:%d", len(p))
+	}
+
 	p[2] = 0x8
 	pn := buf.Get()
 
