@@ -26,7 +26,7 @@ type Route struct {
 	slices []*Slice
 	k      int // number of slices the ring is divided into
 	div    int
-	block  *big.Int
+	block  int
 }
 
 func (r *Route) Len() int {
@@ -43,7 +43,11 @@ func (r *Route) GetIndex(id string) (sliceidx int) {
 	if err != nil {
 		glog.Error(err)
 	}
-	return int(idx) % r.k
+	if id[:r.div] != FULL_ID[:r.div] {
+		return int(idx) / r.block
+	} else {
+		return len(r.slices) - 1
+	}
 }
 
 func (r *Route) GetNode(id string) (n *Node) {
@@ -102,7 +106,7 @@ func NewRoute(k int) *Route {
 	if k < 2 {
 		panic("K  can't not less than 2")
 	}
-	div := int(math.Pow(float64(k), 1/16))
+	div := int(math.Ceil(math.Log2(float64(k))/8)) * 2
 	glog.Infof("starting route k=%d", k)
 	block := new(big.Int)
 	block.SetBytes(FullID)
@@ -131,6 +135,8 @@ func NewRoute(k int) *Route {
 			BytesToId(max.Bytes()))
 		l = append(l, slice)
 	}
-	r := &Route{l, k, div, block}
+
+	r := &Route{l, k, div,
+		int(math.Pow(float64(16), float64(div))) / k}
 	return r
 }

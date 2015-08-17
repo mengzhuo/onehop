@@ -15,18 +15,11 @@ const (
 func (s *Service) Handle(raddr *net.UDPAddr, msg *Msg) {
 
 	local := s.conn.LocalAddr().String()
-	bad_guys := false
 	// We will not allow other say badthings about us
 	for _, e := range msg.Events {
 		if e.Addr == local && e.Status == LEAVE {
 			e.Status = JOIN
-			bad_guys = true
 		}
-	}
-
-	if bad_guys {
-		// Force to tell slice leader
-		s.NotifySliceLeader(s.selfNode, JOIN)
 	}
 
 	// Main handle function for ALL msg

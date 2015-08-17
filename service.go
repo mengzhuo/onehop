@@ -2,6 +2,7 @@ package onehop
 
 import (
 	"crypto/rand"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -14,15 +15,9 @@ import (
 type Service struct {
 	conn *net.UDPConn
 
-	route   *Route
-	counter uint8
+	route *Route
 
-	//db       *Storage
-	//bytePool *BytePool
-	id       string
-	selfNode *Node
-
-	ticker *time.Ticker
+	id string
 
 	exchangeEvent []Event
 	notifyEvent   []Event
@@ -46,7 +41,6 @@ func NewService(netType, address string, k, w, r int) *Service {
 	if err != nil {
 		panic(err)
 	}
-
 	glog.Infof("Listening to :%s %s", netType, address)
 	route = NewRoute(k)
 	max := new(big.Int).SetBytes(FullID)
@@ -57,22 +51,22 @@ func NewService(netType, address string, k, w, r int) *Service {
 	}
 
 	id := BytesToId(vid.Bytes())
-	glog.Infof("initial id:%x", id)
+	glog.Infof("initial id:%s", id)
 
 	n := &Node{ID: id,
 		Addr: listener.LocalAddr().(*net.UDPAddr)}
 	route.Add(n)
 
-	eventTicker := time.NewTicker(3 * time.Second)
 	slice := route.slices[route.GetIndex(id)]
 
 	service = &Service{
-		listener, route, uint8(0),
-		id, n,
-		eventTicker,
+		listener, route,
+		id,
 		make([]Event, 0), make([]Event, 0), slice, n,
 		nil, nil, w, r}
 
+	gob.Register(Msg{})
+	gob.Register(Event{})
 	glog.V(3).Infof("RPC Listener Accepted")
 	return service
 }
@@ -231,7 +225,7 @@ func (s *Service) BootStrapFrom(address string) {
 
 	glog.Infof("BootStrap From :%s", address)
 	addr, _ := net.ResolveUDPAddr("udp", address)
-	msg := &Msg{}
+	msg := new(Msg)
 	msg.Type = BOOTSTRAP
 	msg.NewID()
 	s.SendMsg(addr, msg)
@@ -290,7 +284,7 @@ func (s *Service) NotifySliceLeader(n *Node, status byte) {
 
 	slice := s.selfSlice
 
-	if slice.Leader == nil {
+	if slice.Leader() == nil {
 		glog.Fatal("Something is wrong!!! we are still in the slice and there is no slice leader?")
 	}
 	glog.V(5).Infof("Notify Slice leader about  %s", n)

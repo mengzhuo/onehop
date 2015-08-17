@@ -2,7 +2,6 @@ package onehop
 
 import (
 	"fmt"
-	"math/big"
 	"math/rand"
 )
 
@@ -47,10 +46,10 @@ const (
 )
 
 type Msg struct {
-	ID     uint32   `json:"i"`
-	Type   uint8    `json:"t"`
-	From   *big.Int `json:"f"` // ID of remote node
-	Events []Event  `json:"e,omitempty"`
+	ID     int
+	Type   uint8
+	From   string
+	Events []Event
 }
 
 func (m *Msg) String() string {
@@ -59,7 +58,7 @@ func (m *Msg) String() string {
 
 }
 
-func NewMsg(typ uint8, f *big.Int, es []Event) *Msg {
+func NewMsg(typ uint8, f string, es []Event) *Msg {
 	msg := new(Msg)
 	msg.NewID()
 	msg.Type = typ
@@ -70,5 +69,5 @@ func NewMsg(typ uint8, f *big.Int, es []Event) *Msg {
 }
 
 func (m *Msg) NewID() {
-	m.ID = rand.Uint32()
+	m.ID = rand.Int()
 }

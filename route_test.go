@@ -12,35 +12,84 @@ func TestNewRoute(t *testing.T) {
 	if len(r.slices) != 16 {
 		t.Error(r.slices)
 	}
-	if r.div != 1 {
+	if r.div != 2 {
 		t.Error(r.div)
 	}
-	r = NewRoute(4)
-	if len(r.slices) != 4 {
-		t.Error(r.slices)
-	}
-	if r.div != 1 {
+
+	r = NewRoute(257)
+	if r.div != 4 {
 		t.Error(r.div)
 	}
-	for _, s := range r.slices {
-		fmt.Println(s.Min, s.Max)
+}
+
+func TestGetIndex(t *testing.T) {
+
+	r := NewRoute(257)
+	id := "f2ffffffffffffffffffffffffffffff"
+	idx := r.GetIndex(id)
+	if s := r.slices[idx]; s.Min > id || s.Max < id {
+		t.Error(idx, s)
+	}
+	id = FULL_ID
+	idx = r.GetIndex(id)
+	if s := r.slices[idx]; s.Min > id || s.Max < id {
+		t.Error(idx, s)
+	}
+}
+
+func BenchmarkGetIndex(b *testing.B) {
+	r := NewRoute(257)
+	for i := 0; i < b.N; i++ {
+		r.GetIndex(FULL_ID)
 	}
 }
 
 func TestRouteAdd(t *testing.T) {
 
 	r := NewRoute(4)
-	for id := 0; id < 32; id += 2 {
-
-		r.Add(&Node{BytesToId([]byte{byte(id)}),
-			nil, time.Now()})
-	}
-	r.Add(&Node{FULL_ID, nil, time.Now()})
-	for _, n := range r.slices[0].Nodes {
-		fmt.Println(n.String())
+	for i := 0; i < 256; i += 15 {
+		id := fmt.Sprintf("%02x", []byte{byte(i)}) + FULL_ID[2:]
+		r.Add(&Node{id, nil, time.Now()})
 	}
 
+	if r.Len() != 18 {
+		for _, slice := range r.slices {
+			t.Errorf("Slice %s->%s :%d\n", slice.Min, slice.Max, slice.Len())
+			for _, n := range slice.Nodes {
+				t.Error("|- " + n.String())
+			}
+		}
+	}
+
+	r = NewRoute(17)
+	for i := 0; i < 256; i += 2 {
+		id := fmt.Sprintf("%02x", []byte{byte(i)}) + FULL_ID[2:]
+		r.Add(&Node{id, nil, time.Now()})
+	}
+	if r.Len() != 128 {
+		for _, slice := range r.slices {
+			t.Errorf("Slice %s->%s :%d\n", slice.Min, slice.Max, slice.Len())
+			for _, n := range slice.Nodes {
+				t.Error("|- " + n.String())
+			}
+		}
+	}
+}
+
+func TestRouteDelete(t *testing.T) {
+
+	r := NewRoute(4)
+	for i := 0; i < 256; i += 15 {
+		id := fmt.Sprintf("%02x", []byte{byte(i)}) + FULL_ID[2:]
+		r.Add(&Node{id, nil, time.Now()})
+	}
+	r.Delete("f0ffffffffffffffffffffffffffffff")
 	if r.Len() != 17 {
-		t.Error(r.Len())
+		for _, slice := range r.slices {
+			t.Errorf("Slice %s->%s :%d\n", slice.Min, slice.Max, slice.Len())
+			for _, n := range slice.Nodes {
+				t.Error("|- " + n.String())
+			}
+		}
 	}
 }

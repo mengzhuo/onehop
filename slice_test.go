@@ -18,6 +18,12 @@ func newSlice() *Slice {
 	return s
 }
 
+func BenchmarkNewSlice(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		NewSlice(ZERO_ID, FULL_ID)
+	}
+}
+
 func TestSliceAdd(t *testing.T) {
 	s := newSlice()
 	n := s.Get(BytesToId([]byte{16}))
@@ -26,6 +32,15 @@ func TestSliceAdd(t *testing.T) {
 	}
 	if s.Leader() != n {
 		t.Errorf("Wrong leader")
+
+	}
+}
+
+func BenchmarkSliceAdd(b *testing.B) {
+	s := newSlice()
+	for i := 0; i < b.N; i++ {
+		s.Add(&Node{string(i),
+			nil, time.Now()})
 
 	}
 }
@@ -57,6 +72,13 @@ func TestSliceDelete(t *testing.T) {
 	}
 }
 
+func BenchmarkSliceDelete(b *testing.B) {
+	s := newSlice()
+	for i := 0; i < b.N; i++ {
+		s.Delete(string(i))
+	}
+}
+
 func TestSliceSuccessorOf(t *testing.T) {
 	s := newSlice()
 	n := s.successorOf(BytesToId([]byte{8}))
@@ -69,6 +91,13 @@ func TestSliceSuccessorOf(t *testing.T) {
 	}
 }
 
+func BenchmarkSliceSuccessorOf(b *testing.B) {
+	s := newSlice()
+	for i := 0; i < b.N; i++ {
+		s.successorOf("0000000000000000000008")
+	}
+}
+
 func TestSlicePredecessorOf(t *testing.T) {
 	s := newSlice()
 	n := s.predecessorOf(BytesToId([]byte{8}))
@@ -78,6 +107,12 @@ func TestSlicePredecessorOf(t *testing.T) {
 	n = s.predecessorOf(BytesToId([]byte{0}))
 	if n != nil {
 		t.Errorf("SS failed:%s", n)
+	}
+}
+func BenchmarkSlicePredecessorOf(b *testing.B) {
+	s := newSlice()
+	for i := 0; i < b.N; i++ {
+		s.predecessorOf("0000000000000000000008")
 	}
 }
 
