@@ -1,8 +1,14 @@
 package onehop
 
 import (
+	"bytes"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net"
+	"sync"
+	"time"
 
 	"github.com/golang/glog"
 )
@@ -14,21 +20,30 @@ type Service struct {
 
 	id string
 
-	exchangeEvent []Event
-	notifyEvent   []Event
+	exchangeEvent map[string]*Event
+	notifyEvent   map[string]*Event
 
-	selfSlice   *Slice
-	pinger      *Node
-	leftPonger  *Node
-	rightPonger *Node
-	W, R        int
-	//RPCPool     *RPCPool
-	bytePool *LeakyBuffer
+	selfSlice *Slice
+	W, R      int
+	bytePool  *LeakyBuffer
+
+	InBuffer  *bytes.Buffer
+	InDecoder *json.Decoder
+	InLock    *sync.Mutex
+
+	OutBuffer  *bytes.Buffer
+	OutEncoder *json.Encoder
+	OutLock    *sync.Mutex
+}
+
+func NewUDPDecoder(buf *bytes.Buffer) *json.Decoder {
+	return json.NewDecoder(buf)
 }
 
 // NetType, Address for UDP connection
 // k for OneHop slice number
 func NewService(netType, address string, k, w, r int) *Service {
+
 	glog.Infof("Write:%d, Read:%d", k, r)
 	listener, err := newListener(netType, address)
 	if err != nil {
@@ -38,33 +53,38 @@ func NewService(netType, address string, k, w, r int) *Service {
 		panic(err)
 	}
 	glog.Infof("Listening to :%s %s", netType, address)
+
 	route = NewRoute(k)
-	/*
-		max := new(big.Int).SetBytes(FullID)
+	vid := make([]byte, 16)
+	rand.Read(vid)
+	id := hex.EncodeToString(vid)
 
-		vid, err := rand.Int(rand.Reader, max)
-		if err != nil {
-			panic(err)
-		}
+	n := &Node{ID: id,
+		Addr: listener.LocalAddr().(*net.UDPAddr)}
+	route.Add(n)
 
-		id := BytesToId(vid.Bytes())
-		glog.Infof("initial id:%s", id)
+	slice := route.slices[route.GetIndex(id)]
+	glog.V(1).Info("Self Slice:", slice.Max)
 
-		n := &Node{ID: id,
-			Addr: listener.LocalAddr().(*net.UDPAddr)}
-		route.Add(n)
-
-		slice := route.slices[route.GetIndex(id)]
-	*/
+	inBuffer := bytes.NewBuffer(make([]byte, 0))
+	outBuffer := bytes.NewBuffer(make([]byte, 0))
 	service = &Service{
 		listener, route,
-		"",
-		make([]Event, 0),
-		make([]Event, 0), nil, nil,
-		nil, nil, w, r,
-		NewLeakyBuffer(1024, MSG_MAX_SIZE)}
+		id,
+		make(map[string]*Event, 0),
+		make(map[string]*Event, 0),
+		slice,
+		w, r,
+		NewLeakyBuffer(1024, MSG_MAX_SIZE),
+		inBuffer,
+		json.NewDecoder(inBuffer),
+		&sync.Mutex{},
+		outBuffer,
+		json.NewEncoder(outBuffer),
+		&sync.Mutex{}}
 
 	glog.V(3).Infof("RPC Listener Accepted")
+	go service.Start()
 	return service
 }
 
@@ -221,9 +241,11 @@ func (s *Service) RPCError(err error, node *Node) bool {
 func (s *Service) BootStrapFrom(address string) {
 
 	glog.Infof("BootStrap From :%s", address)
-	//addr, _ := net.ResolveUDPAddr("udp", address)
-	msg := new(MsgHeader)
+	addr, _ := net.ResolveUDPAddr("udp", address)
+	msg := new(Msg)
 	msg.Type = BOOTSTRAP
+	msg.From = s.id
+	s.SendMsg(addr, msg)
 }
 
 func BytesToId(p []byte) string {
@@ -240,25 +262,26 @@ func (s *Service) Listen() {
 			glog.Errorf("insufficient data from %s:%x", addr, p[:n])
 			continue
 		}
+		glog.V(10).Infof("Recv From %s with %d", addr, n)
 
-		header := ParseHeader(p)
-
-		if int(header.Count)*EVENT_LENGTH > n-HEADER_LENGTH {
-			glog.Errorf("insufficient data parse events %s:%x", addr, p[:n])
+		msg := new(Msg)
+		s.InBuffer.Truncate(0)
+		nn, err := s.InBuffer.Write(p[:n])
+		if err != nil || nn != n {
+			glog.Error(err)
+			continue
 		}
 
-		events := make([]*Event, header.Count, header.Count)
-
-		for i := 0; i < int(header.Count); i++ {
-			events[i] = ParseEvent(p[i*EVENT_LENGTH+HEADER_LENGTH : (i+1)*EVENT_LENGTH+HEADER_LENGTH])
+		err = s.InDecoder.Decode(msg)
+		s.InBuffer.Truncate(0)
+		if err != nil {
+			glog.Error(err, s.InBuffer.Len())
+			continue
 		}
 
-		glog.V(10).Infof("Recv From:%x TYPE:%s", addr, typeName[header.Type])
-
-		go func() {
-			s.Handle(addr, header, events)
-			defer s.bytePool.Put(p)
-		}()
+		glog.V(9).Infof("Msg:%#v", msg)
+		go s.handle(addr, msg)
+		s.bytePool.Put(p)
 	}
 }
 
@@ -275,29 +298,49 @@ func (s *Service) Send(dstAddr *net.UDPAddr, p []byte) {
 	s.conn.WriteToUDP(p, dstAddr)
 }
 
-/*
 func (s *Service) SendMsg(dstAddr *net.UDPAddr, msg *Msg) {
 
-	p, err := json.Marshal(msg)
-	if err != nil {
-		glog.Errorf("Error on parse %s", msg)
-		return
-	}
-	s.Send(dstAddr, p)
+	s.OutLock.Lock()
+	s.OutEncoder.Encode(msg)
+	p := s.OutBuffer.Bytes()
+	s.OutBuffer.Reset()
+
+	s.OutLock.Unlock()
+
+	glog.V(10).Infof("SEND %s with %x", dstAddr, p)
+	go s.Send(dstAddr, p)
 }
-*/
-/*
-func (s *Service) NotifySliceLeader(n *Node, status byte) {
 
-	slice := s.selfSlice
+func (s *Service) Start() {
 
-	if slice.Leader() == nil {
-		glog.Fatal("Something is wrong!!! we are still in the slice and there is no slice leader?")
+	glog.Info("Checker on")
+	for {
+		time.Sleep(1 * time.Second)
+		s.check()
 	}
-	glog.V(5).Infof("Notify Slice leader about  %s", n)
-	e := Event{n.ID, time.Now(), status, n.Addr.String()}
-
-	s.exchangeEvent = append(s.exchangeEvent, e)
-
 }
-*/
+
+func (s *Service) check() {
+
+	// Check Timeout node/leader
+	for _, slice := range s.route.slices {
+		if slice == s.selfSlice {
+			continue
+		}
+
+		var leader *Node
+		if leader = slice.Leader(); leader == nil {
+			continue
+		}
+		if time.Since(leader.updateAt).Seconds() > SLICE_LEADER_TIMEOUT {
+			s.exchangeEvent[leader.ID] = &Event{LEAVE, leader.Addr}
+			s.route.Delete(leader.ID)
+			continue
+		}
+	}
+
+	if s.selfSlice.Leader().ID == s.id {
+		s.exchange()
+		//s.keepOtherAlive(s.exchangeEvent)
+	}
+}

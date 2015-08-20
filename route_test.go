@@ -35,6 +35,12 @@ func TestGetIndex(t *testing.T) {
 	if s := r.slices[idx]; s.Min > id || s.Max < id {
 		t.Error(idx, s)
 	}
+
+	r = NewRoute(2)
+	i := r.GetIndex("2bf2b904cf874746c1a0f8626af0412b")
+	if i != 0 {
+		t.Error(r.slices, i)
+	}
 }
 
 func BenchmarkGetIndex(b *testing.B) {
@@ -42,6 +48,7 @@ func BenchmarkGetIndex(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		r.GetIndex(FULL_ID)
 	}
+
 }
 
 func TestRouteAdd(t *testing.T) {

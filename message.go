@@ -1,5 +1,11 @@
 package onehop
 
+import (
+	"fmt"
+	"net"
+	"time"
+)
+
 const (
 	MSG_MAX_SIZE  = 8192
 	HEADER_LENGTH = 4
@@ -43,17 +49,18 @@ const (
 	LEAVE
 )
 
-type MsgHeader struct {
-	ID    uint8
-	Type  uint8
-	Count uint16
+type Msg struct {
+	ID     uint8             `json:"i"`
+	Type   uint8             `json:"t"`
+	From   string            `json:"f"`
+	Time   time.Time         `json:"s"`
+	Events map[string]*Event `json:"e"`
+}
+type Event struct {
+	Status uint8        `json:"s"`
+	Addr   *net.UDPAddr `json:"a"` // IPv4 port
 }
 
-func ParseHeader(p []byte) *MsgHeader {
-
-	h := new(MsgHeader)
-	h.ID = p[0]
-	h.Type = p[1]
-	h.Count = uint16(p[2])<<8 | uint16(p[3])
-	return h
+func (e *Event) String() string {
+	return fmt.Sprintf("Event:S:%x A:%s", e.Status, e.Addr)
 }
