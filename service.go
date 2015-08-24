@@ -20,20 +20,14 @@ type Service struct {
 
 	id string
 
-	exchangeEvent map[string]*Event
-	notifyEvent   map[string]*Event
+	exchangeEvent []*Event
+	exchangeLock  *sync.RWMutex
+	notifyEvent   []*Event
+	notifyLock    *sync.RWMutex
 
 	selfSlice *Slice
 	W, R      int
 	bytePool  *LeakyBuffer
-
-	InBuffer  *bytes.Buffer
-	InDecoder *json.Decoder
-	InLock    *sync.Mutex
-
-	OutBuffer  *bytes.Buffer
-	OutEncoder *json.Encoder
-	OutLock    *sync.Mutex
 }
 
 func NewUDPDecoder(buf *bytes.Buffer) *json.Decoder {
@@ -59,29 +53,26 @@ func NewService(netType, address string, k, w, r int) *Service {
 	rand.Read(vid)
 	id := hex.EncodeToString(vid)
 
-	n := &Node{ID: id,
-		Addr: listener.LocalAddr().(*net.UDPAddr)}
+	n := &Node{id,
+		listener.LocalAddr().(*net.UDPAddr),
+		time.Now().Unix(),
+		&sync.Mutex{}}
 	route.Add(n)
 
 	slice := route.slices[route.GetIndex(id)]
 	glog.V(1).Info("Self Slice:", slice.Max)
 
-	inBuffer := bytes.NewBuffer(make([]byte, 0))
-	outBuffer := bytes.NewBuffer(make([]byte, 0))
 	service = &Service{
 		listener, route,
 		id,
-		make(map[string]*Event, 0),
-		make(map[string]*Event, 0),
+		make([]*Event, 0),
+		&sync.RWMutex{},
+		make([]*Event, 0),
+		&sync.RWMutex{},
 		slice,
 		w, r,
 		NewLeakyBuffer(1024, MSG_MAX_SIZE),
-		inBuffer,
-		json.NewDecoder(inBuffer),
-		&sync.Mutex{},
-		outBuffer,
-		json.NewEncoder(outBuffer),
-		&sync.Mutex{}}
+	}
 
 	glog.V(3).Infof("RPC Listener Accepted")
 	go service.Start()
@@ -265,22 +256,15 @@ func (s *Service) Listen() {
 		glog.V(10).Infof("Recv From %s with %d", addr, n)
 
 		msg := new(Msg)
-		s.InBuffer.Truncate(0)
-		nn, err := s.InBuffer.Write(p[:n])
-		if err != nil || nn != n {
-			glog.Error(err)
-			continue
-		}
 
-		err = s.InDecoder.Decode(msg)
-		s.InBuffer.Truncate(0)
+		err = json.Unmarshal(p[:n], msg)
 		if err != nil {
-			glog.Error(err, s.InBuffer.Len())
+			glog.Error(err, p[:n])
 			continue
 		}
 
-		glog.V(9).Infof("Msg:%#v", msg)
-		go s.handle(addr, msg)
+		glog.V(9).Infof("Msg:%s", msg)
+		s.handle(addr, msg)
 		s.bytePool.Put(p)
 	}
 }
@@ -300,15 +284,13 @@ func (s *Service) Send(dstAddr *net.UDPAddr, p []byte) {
 
 func (s *Service) SendMsg(dstAddr *net.UDPAddr, msg *Msg) {
 
-	s.OutLock.Lock()
-	s.OutEncoder.Encode(msg)
-	p := s.OutBuffer.Bytes()
-	s.OutBuffer.Reset()
-
-	s.OutLock.Unlock()
-
+	p, err := json.Marshal(msg)
+	if err != nil {
+		glog.Error(err)
+		return
+	}
 	glog.V(10).Infof("SEND %s with %x", dstAddr, p)
-	go s.Send(dstAddr, p)
+	s.Send(dstAddr, p)
 }
 
 func (s *Service) Start() {
@@ -320,27 +302,96 @@ func (s *Service) Start() {
 	}
 }
 
+func (s *Service) checkSelfSlice(slice *Slice, now int64) {
+
+	timeouted := make([]string, 0)
+	slice.RLock()
+	for _, n := range slice.Nodes {
+		if n.ID == s.id {
+			n.Update(now)
+			continue
+		} else if now-n.updateAt > NODE_TIMEOUT {
+			glog.Infof("Node:%s timeout by self", n.ID)
+			s.AddExchangeEvent(&Event{n.ID, LEAVE, n.Addr})
+			timeouted = append(timeouted, n.ID)
+		}
+	}
+	slice.RUnlock()
+
+	for _, id := range timeouted {
+		slice.Delete(id)
+	}
+}
+
+func (s *Service) checkOuterSlice(slice *Slice, now int64) {
+
+	var leader *Node
+	if leader = slice.Leader(); leader == nil {
+		return
+	}
+
+	leader.Lock()
+	defer leader.Unlock()
+	if now-leader.updateAt > SLICE_LEADER_TIMEOUT {
+		s.route.Delete(leader.ID)
+		s.notifyLock.Lock()
+		s.notifyEvent = append(s.notifyEvent, &Event{leader.ID, LEAVE, leader.Addr})
+		s.notifyLock.Unlock()
+	}
+
+}
+
 func (s *Service) check() {
 
-	// Check Timeout node/leader
-	for _, slice := range s.route.slices {
-		if slice == s.selfSlice {
-			continue
-		}
+	now := time.Now().Unix()
 
-		var leader *Node
-		if leader = slice.Leader(); leader == nil {
-			continue
-		}
-		if time.Since(leader.updateAt).Seconds() > SLICE_LEADER_TIMEOUT {
-			s.exchangeEvent[leader.ID] = &Event{LEAVE, leader.Addr}
-			s.route.Delete(leader.ID)
-			continue
-		}
-	}
+	if l := s.selfSlice.Leader(); l != nil && l.ID == s.id {
+		for _, slice := range s.route.slices {
+			if slice == s.selfSlice {
+				s.checkSelfSlice(slice, now)
+			} else {
+				s.checkOuterSlice(slice, now)
+			}
 
-	if s.selfSlice.Leader().ID == s.id {
+		}
 		s.exchange()
-		//s.keepOtherAlive(s.exchangeEvent)
+		s.keepOtherAlive()
+
+	} else {
+
+		msg := new(Msg)
+		msg.Type = EVENT_NOTIFICATION
+		msg.From = s.id
+		msg.Events = s.exchangeEvent
+		msg.Events = append(msg.Events, &Event{s.id, JOIN,
+			s.conn.LocalAddr().(*net.UDPAddr)})
+		msg.Time = now
+		s.SendMsg(l.Addr, msg)
 	}
+
+	s.exchangeLock.Lock()
+	defer s.exchangeLock.Unlock()
+	s.exchangeEvent = s.exchangeEvent[:0]
+
+	s.notifyLock.Lock()
+	defer s.notifyLock.Unlock()
+	s.notifyEvent = s.notifyEvent[:0]
+}
+
+func (s *Service) AddNotifyEvent(msg *Msg) {
+	s.notifyLock.Lock()
+	defer s.notifyLock.Unlock()
+	s.notifyEvent = append(s.notifyEvent, msg.Events...)
+}
+func (s *Service) AddExchangeMsg(msg *Msg) {
+
+	s.exchangeLock.Lock()
+	defer s.exchangeLock.Unlock()
+	s.exchangeEvent = append(s.exchangeEvent, msg.Events...)
+}
+func (s *Service) AddExchangeEvent(event *Event) {
+
+	s.exchangeLock.Lock()
+	defer s.exchangeLock.Unlock()
+	s.exchangeEvent = append(s.exchangeEvent, event)
 }

@@ -54,6 +54,8 @@ func (s *Slice) predecessorOf(id string) (n *Node) {
 }
 
 func (u *Slice) getID(id string) (i int) {
+	u.RLock()
+	defer u.RUnlock()
 
 	i = sort.Search(len(u.Nodes),
 		func(i int) bool {
@@ -73,6 +75,9 @@ func (s *Slice) Get(id string) (n *Node) {
 
 func (s *Slice) Leader() *Node {
 
+	s.RLock()
+	defer s.RUnlock()
+
 	if len(s.Nodes) > 0 {
 		return s.Nodes[len(s.Nodes)/2]
 	}
@@ -82,13 +87,12 @@ func (s *Slice) Leader() *Node {
 
 func (s *Slice) Delete(id string) bool {
 
-	s.Lock()
-	defer s.Unlock()
-
 	i := s.getID(id)
 
 	if i < len(s.Nodes) && s.Nodes[i].ID == id {
+		s.Lock()
 		s.Nodes = append(s.Nodes[:i], s.Nodes[i+1:]...)
+		s.Unlock()
 		glog.Infof("slice %s Delete %s", s.Max, id)
 		return true
 	}
@@ -97,17 +101,16 @@ func (s *Slice) Delete(id string) bool {
 
 func (s *Slice) Add(n *Node) bool {
 
-	s.Lock()
-	defer s.Unlock()
-
 	if n.ID < s.Min || n.ID > s.Max {
 		return false
 	}
 
 	if node := s.Get(n.ID); node == nil {
 		glog.Infof("Slice %s add %s", s.Max, n.ID)
+		s.Lock()
 		s.Nodes = append(s.Nodes, n)
 		sort.Sort(s.Nodes)
+		s.Unlock()
 	}
 	return true
 }

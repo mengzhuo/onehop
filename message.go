@@ -3,7 +3,6 @@ package onehop
 import (
 	"fmt"
 	"net"
-	"time"
 )
 
 const (
@@ -50,13 +49,21 @@ const (
 )
 
 type Msg struct {
-	ID     uint8             `json:"i"`
-	Type   uint8             `json:"t"`
-	From   string            `json:"f"`
-	Time   time.Time         `json:"s"`
-	Events map[string]*Event `json:"e"`
+	ID     uint8    `json:"i"`
+	Type   uint8    `json:"t"`
+	From   string   `json:"f"`
+	Time   int64    `json:"s"`
+	Events []*Event `json:"e"`
 }
+
+func (m *Msg) String() string {
+
+	return fmt.Sprintf("MSG F:%s T:%s E:%s", m.From, typeName[m.Type], m.Events)
+
+}
+
 type Event struct {
+	ID     string       `json:"i"`
 	Status uint8        `json:"s"`
 	Addr   *net.UDPAddr `json:"a"` // IPv4 port
 }

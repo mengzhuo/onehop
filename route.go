@@ -50,6 +50,13 @@ func (r *Route) GetIndex(id string) (sliceidx int) {
 	}
 }
 
+func (r *Route) GetSlice(id string) (slice *Slice) {
+
+	slice_idx := r.GetIndex(id)
+	slice = r.slices[slice_idx]
+	return
+}
+
 func (r *Route) GetNode(id string) (n *Node) {
 
 	slice_idx := r.GetIndex(id)

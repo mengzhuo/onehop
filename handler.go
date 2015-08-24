@@ -2,15 +2,16 @@ package onehop
 
 import (
 	"net"
+	"sync"
 	"time"
 
 	"github.com/golang/glog"
 )
 
 const (
-	SLICE_LEADER_TIMEOUT = 15
-	EVENT_TIMEOUT        = 20
-	NODE_TIMEOUT         = 30
+	SLICE_LEADER_TIMEOUT = 5
+	EVENT_TIMEOUT        = 10
+	NODE_TIMEOUT         = 10
 )
 
 func (s *Service) handle(raddr *net.UDPAddr, msg *Msg) {
@@ -18,14 +19,14 @@ func (s *Service) handle(raddr *net.UDPAddr, msg *Msg) {
 	switch msg.Type {
 
 	case BOOTSTRAP:
-		msg.Events = make(map[string]*Event)
+
 		msg.Type = BOOTSTRAP_RESPONSE
-		msg.Time = time.Now()
+		msg.Time = time.Now().Unix()
 		msg.From = s.id
 		for _, slice := range s.route.slices {
 			slice.RLock()
 			for _, n := range slice.Nodes {
-				msg.Events[n.ID] = &Event{JOIN, n.Addr}
+				msg.Events = append(msg.Events, &Event{n.ID, JOIN, n.Addr})
 			}
 			slice.RUnlock()
 		}
@@ -33,13 +34,22 @@ func (s *Service) handle(raddr *net.UDPAddr, msg *Msg) {
 
 	case BOOTSTRAP_RESPONSE:
 		s.OnBootstrapResponse(raddr, msg)
+
 	case KEEP_ALIVE:
 		s.OnKeepAlive(raddr, msg)
+		s.AddExchangeMsg(msg)
+
 	case KEEP_ALIVE_RESPONSE:
 		s.handleEvents(raddr, msg)
+		s.AddExchangeMsg(msg)
+
 	case MESSAGE_EXCHANGE:
 		s.handleEvents(raddr, msg)
+		s.AddNotifyEvent(msg)
+
 	case EVENT_NOTIFICATION:
+		s.handleEvents(raddr, msg)
+		s.AddExchangeMsg(msg)
 	default:
 		glog.Infof("UnKnown message type %v", msg)
 		return
@@ -48,25 +58,34 @@ func (s *Service) handle(raddr *net.UDPAddr, msg *Msg) {
 
 func (s *Service) handleEvents(raddr *net.UDPAddr, msg *Msg) {
 
-	if n := s.route.GetNode(msg.From); n == nil {
+	slice := s.route.GetSlice(msg.From)
+
+	if n := slice.Get(msg.From); n == nil {
 		glog.Infof("Msg Add Node:%s", msg.From)
-		s.route.Add(&Node{msg.From, raddr, msg.Time})
+		s.route.Add(&Node{msg.From, raddr, msg.Time, &sync.Mutex{}})
 	} else {
-		n.updateAt = msg.Time
+		n.Update(msg.Time)
 	}
 	if msg.Events == nil {
 		return
 	}
-	for id, e := range msg.Events {
-		switch e.Status {
+
+	for _, event := range msg.Events {
+
+		if event.ID == s.id {
+			continue
+		}
+
+		switch event.Status {
 		case JOIN:
-			if n := s.route.GetNode(id); n != nil {
-				n.updateAt = msg.Time
+			id_slice := s.route.GetSlice(event.ID)
+			if n := id_slice.Get(event.ID); n != nil && n.updateAt < msg.Time {
+				n.Update(msg.Time)
 				continue
 			}
-			s.route.Add(&Node{id, e.Addr, msg.Time})
+			s.route.Add(&Node{event.ID, event.Addr, msg.Time, &sync.Mutex{}})
 		case LEAVE:
-			s.route.Delete(id)
+			s.route.Delete(event.ID)
 		}
 	}
 
@@ -83,8 +102,8 @@ func (s *Service) passOn(msg *Msg) {
 
 	if n != nil {
 		msg.From = s.id
-		msg.Events[s.id] = &Event{JOIN, s.conn.LocalAddr().(*net.UDPAddr)}
-		msg.Time = time.Now()
+		msg.Events = append(msg.Events, &Event{n.ID, JOIN, s.conn.LocalAddr().(*net.UDPAddr)})
+		msg.Time = time.Now().Unix()
 		s.SendMsg(n.Addr, msg)
 	}
 }
@@ -104,7 +123,13 @@ func (s *Service) OnKeepAlive(raddr *net.UDPAddr, msg *Msg) {
 	s.SendMsg(raddr, msg)
 }
 
-func (s *Service) keepOtherAlive(msg *Msg) {
+func (s *Service) keepOtherAlive() {
+
+	msg := new(Msg)
+	msg.From = s.id
+	msg.Type = KEEP_ALIVE
+	msg.Events = append(s.exchangeEvent, s.notifyEvent...)
+	msg.Time = time.Now().Unix()
 
 	sn := s.selfSlice.successorOf(s.id)
 	if sn != nil {
@@ -120,6 +145,10 @@ func (s *Service) keepOtherAlive(msg *Msg) {
 
 func (s *Service) exchange() {
 
+	s.exchangeLock.RLock()
+	defer s.exchangeLock.RUnlock()
+	now := time.Now().Unix()
+
 	for _, slice := range s.route.slices {
 		if slice == s.selfSlice {
 			continue
@@ -129,8 +158,8 @@ func (s *Service) exchange() {
 
 			msg := &Msg{Type: MESSAGE_EXCHANGE,
 				From:   s.id,
-				Events: s.notifyEvent,
-				Time:   time.Now()}
+				Events: s.exchangeEvent,
+				Time:   now}
 			s.SendMsg(n.Addr, msg)
 		}
 	}
