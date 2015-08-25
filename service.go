@@ -13,6 +13,8 @@ import (
 	"github.com/golang/glog"
 )
 
+var ALIVE_EVENT *Event
+
 type Service struct {
 	conn *net.UDPConn
 
@@ -76,6 +78,7 @@ func NewService(netType, address string, k, w, r int) *Service {
 
 	glog.V(3).Infof("RPC Listener Accepted")
 	go service.Start()
+	ALIVE_EVENT = &Event{id, JOIN, listener.LocalAddr().(*net.UDPAddr)}
 	return service
 }
 
@@ -302,19 +305,55 @@ func (s *Service) Start() {
 	}
 }
 
+func (s *Service) Status() {
+	glog.Infof("-------------NODE:%s------------", s.id)
+	for _, slice := range s.route.slices {
+		slice.RLock()
+		glog.Infof("Slice[%d]:%s->%s", slice.Len(), slice.Min, slice.Max)
+		l := slice.Leader()
+		for i, n := range slice.Nodes {
+			n.Lock()
+			p := "├━ %s %s"
+			leader := ""
+			if i == slice.Len()-1 {
+				p = "└━ %s %s"
+			}
+			if n.ID == l.ID {
+				leader = "[LEADER]"
+			}
+			glog.Infof(p, n.ID, leader)
+			n.Unlock()
+		}
+		slice.RUnlock()
+	}
+}
+
 func (s *Service) checkSelfSlice(slice *Slice, now int64) {
 
 	timeouted := make([]string, 0)
 	slice.RLock()
+	leader := slice.Leader()
+
 	for _, n := range slice.Nodes {
-		if n.ID == s.id {
-			n.Update(now)
-			continue
-		} else if now-n.updateAt > NODE_TIMEOUT {
-			glog.Infof("Node:%s timeout by self", n.ID)
-			s.AddExchangeEvent(&Event{n.ID, LEAVE, n.Addr})
-			timeouted = append(timeouted, n.ID)
+
+		n.Lock()
+		switch n.ID {
+		case s.id:
+		//pass
+		case leader.ID:
+			if now-n.updateAt > SLICE_LEADER_TIMEOUT {
+				glog.Infof("Leader Node:%s timeouted", n.ID)
+				s.AddExchangeEvent(&Event{n.ID, LEAVE, n.Addr})
+				timeouted = append(timeouted, n.ID)
+			}
+		default:
+			if now-n.updateAt > NODE_TIMEOUT {
+				glog.Infof("Node:%s timeouted", n.ID)
+				s.AddExchangeEvent(&Event{n.ID, LEAVE, n.Addr})
+				timeouted = append(timeouted, n.ID)
+			}
 		}
+		n.Unlock()
 	}
 	slice.RUnlock()
 
@@ -332,6 +371,7 @@ func (s *Service) checkOuterSlice(slice *Slice, now int64) {
 
 	leader.Lock()
 	defer leader.Unlock()
+
 	if now-leader.updateAt > SLICE_LEADER_TIMEOUT {
 		s.route.Delete(leader.ID)
 		s.notifyLock.Lock()
@@ -344,6 +384,7 @@ func (s *Service) checkOuterSlice(slice *Slice, now int64) {
 func (s *Service) check() {
 
 	now := time.Now().Unix()
+	s.checkSelfSlice(s.selfSlice, now)
 
 	if l := s.selfSlice.Leader(); l != nil && l.ID == s.id {
 		for _, slice := range s.route.slices {
@@ -352,19 +393,16 @@ func (s *Service) check() {
 			} else {
 				s.checkOuterSlice(slice, now)
 			}
-
 		}
 		s.exchange()
 		s.keepOtherAlive()
 
 	} else {
-
 		msg := new(Msg)
 		msg.Type = EVENT_NOTIFICATION
 		msg.From = s.id
 		msg.Events = s.exchangeEvent
-		msg.Events = append(msg.Events, &Event{s.id, JOIN,
-			s.conn.LocalAddr().(*net.UDPAddr)})
+		msg.Events = append(msg.Events, ALIVE_EVENT)
 		msg.Time = now
 		s.SendMsg(l.Addr, msg)
 	}

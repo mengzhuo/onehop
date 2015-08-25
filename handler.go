@@ -37,11 +37,9 @@ func (s *Service) handle(raddr *net.UDPAddr, msg *Msg) {
 
 	case KEEP_ALIVE:
 		s.OnKeepAlive(raddr, msg)
-		s.AddExchangeMsg(msg)
 
 	case KEEP_ALIVE_RESPONSE:
 		s.handleEvents(raddr, msg)
-		s.AddExchangeMsg(msg)
 
 	case MESSAGE_EXCHANGE:
 		s.handleEvents(raddr, msg)
@@ -50,6 +48,7 @@ func (s *Service) handle(raddr *net.UDPAddr, msg *Msg) {
 	case EVENT_NOTIFICATION:
 		s.handleEvents(raddr, msg)
 		s.AddExchangeMsg(msg)
+
 	default:
 		glog.Infof("UnKnown message type %v", msg)
 		return
@@ -79,12 +78,15 @@ func (s *Service) handleEvents(raddr *net.UDPAddr, msg *Msg) {
 		switch event.Status {
 		case JOIN:
 			id_slice := s.route.GetSlice(event.ID)
-			if n := id_slice.Get(event.ID); n != nil && n.updateAt < msg.Time {
-				n.Update(msg.Time)
-				continue
+			var n *Node
+			if n = id_slice.Get(event.ID); n == nil {
+				glog.Infof("Event add node %s", event.ID)
+				n = &Node{event.ID, event.Addr, msg.Time, &sync.Mutex{}}
+				s.route.Add(n)
 			}
-			s.route.Add(&Node{event.ID, event.Addr, msg.Time, &sync.Mutex{}})
+			n.Update(msg.Time)
 		case LEAVE:
+			glog.Infof("Delete node %s by event", event.ID)
 			s.route.Delete(event.ID)
 		}
 	}
@@ -102,7 +104,7 @@ func (s *Service) passOn(msg *Msg) {
 
 	if n != nil {
 		msg.From = s.id
-		msg.Events = append(msg.Events, &Event{n.ID, JOIN, s.conn.LocalAddr().(*net.UDPAddr)})
+		msg.Events = append(msg.Events, ALIVE_EVENT)
 		msg.Time = time.Now().Unix()
 		s.SendMsg(n.Addr, msg)
 	}
@@ -116,19 +118,27 @@ func (s *Service) OnKeepAlive(raddr *net.UDPAddr, msg *Msg) {
 	s.handleEvents(raddr, msg)
 	s.passOn(msg)
 
-	msg.Events = nil
+	// Reply to requester about the leader
+	l := s.selfSlice.Leader()
 
-	msg.Type = KEEP_ALIVE_RESPONSE
-	msg.From = s.id
-	s.SendMsg(raddr, msg)
+	if msg.From != l.ID {
+		msg.Type = KEEP_ALIVE_RESPONSE
+		msg.From = s.id
+		msg.Events = []*Event{&Event{l.ID, JOIN, l.Addr}}
+		s.SendMsg(raddr, msg)
+	}
 }
 
 func (s *Service) keepOtherAlive() {
+	s.exchangeLock.RLock()
+	defer s.exchangeLock.RUnlock()
 
 	msg := new(Msg)
 	msg.From = s.id
 	msg.Type = KEEP_ALIVE
-	msg.Events = append(s.exchangeEvent, s.notifyEvent...)
+	msg.Events = append(s.exchangeEvent[:], s.notifyEvent...)
+	msg.Events = append(msg.Events, ALIVE_EVENT)
+
 	msg.Time = time.Now().Unix()
 
 	sn := s.selfSlice.successorOf(s.id)
@@ -140,7 +150,6 @@ func (s *Service) keepOtherAlive() {
 	if pn != nil {
 		s.SendMsg(pn.Addr, msg)
 	}
-
 }
 
 func (s *Service) exchange() {
@@ -149,17 +158,19 @@ func (s *Service) exchange() {
 	defer s.exchangeLock.RUnlock()
 	now := time.Now().Unix()
 
+	msg := &Msg{Type: MESSAGE_EXCHANGE,
+		From:   s.id,
+		Events: s.exchangeEvent[:],
+		Time:   now}
+
+	msg.Events = append(msg.Events, ALIVE_EVENT)
+
 	for _, slice := range s.route.slices {
 		if slice == s.selfSlice {
 			continue
 		}
 
 		if n := slice.Leader(); n != nil {
-
-			msg := &Msg{Type: MESSAGE_EXCHANGE,
-				From:   s.id,
-				Events: s.exchangeEvent,
-				Time:   now}
 			s.SendMsg(n.Addr, msg)
 		}
 	}
