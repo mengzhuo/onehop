@@ -31,24 +31,18 @@ func NewStorage() *Storage {
 }
 
 type PutArgs struct {
-	Key  []byte
+	Key  string
 	Item *Item
 }
 
-func (s *Storage) Get(key []byte, reply *Item) error {
-
-	k := string(key)
+func (s *Storage) Get(key string, reply *Item) error {
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	r, ok := s.db[k]
-
-	if !ok {
-		return fmt.Errorf("key %x not existed", key)
+	if r, ok := s.db[key]; ok {
+		*reply = *r
+		glog.V(3).Infof("Get Key %s %v", key, reply)
 	}
-	// TODO wired pointer
-	*reply = *r
-	glog.V(3).Infof("Get Key %x %v", key, reply)
 	return nil
 }
 
@@ -56,13 +50,12 @@ func (s *Storage) Put(args *PutArgs, reply *bool) (err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	key := string(args.Key)
-	glog.V(3).Infof("Put Item %x %s", args.Key, args.Item)
+	glog.V(3).Infof("Put Item %s %s", args.Key, args.Item)
 
-	ditem, ok := s.db[key]
+	ditem, ok := s.db[args.Key]
 	if !ok {
 		// Override
-		s.db[key] = args.Item
+		s.db[args.Key] = args.Item
 		*reply = true
 		return
 	}
@@ -74,7 +67,7 @@ func (s *Storage) Put(args *PutArgs, reply *bool) (err error) {
 		return err
 	}
 
-	s.db[key] = args.Item
+	s.db[args.Key] = args.Item
 	*reply = true
 	return nil
 }
