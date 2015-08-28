@@ -46,6 +46,19 @@ func (s *Storage) Get(key string, reply *Item) error {
 	return nil
 }
 
+func (s *Storage) put(key string, item *Item) (ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if d_item, ok := s.db[key]; ok {
+		if d_item.Ver > item.Ver {
+			return false
+		}
+	}
+	s.db[key] = item
+	return true
+}
+
 func (s *Storage) Put(args *PutArgs, reply *bool) (err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

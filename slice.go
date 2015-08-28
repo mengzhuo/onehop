@@ -25,17 +25,23 @@ func (s *Slice) Len() int {
 
 func (s *Slice) successorOf(id string) (n *Node) {
 
-	if s.Len() == 0 {
-		// Faster query
-		return nil
-	}
-
 	i := s.getID(id)
 
-	if i >= s.Len()-1 {
+	switch s.Len() - i {
+	case 0:
 		return nil
+	case 1:
+		n = s.Nodes[i]
+		if n.ID == id {
+			return nil
+		}
+	default:
+		n = s.Nodes[i]
+		if n.ID == id {
+			n = s.Nodes[i+1]
+		}
 	}
-	return s.Nodes[i+1]
+	return
 }
 
 func (s *Slice) predecessorOf(id string) (n *Node) {

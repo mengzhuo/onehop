@@ -65,29 +65,20 @@ func (r *Route) GetNode(id string) (n *Node) {
 	return slice.Get(id)
 }
 
-func (r *Route) forward(slice_idx int) (sidx int) {
-
-	sidx = slice_idx
-	sidx++
-	return sidx % r.k
-}
-
 func (r *Route) SuccessorOf(id string) (n *Node) {
 
 	slice_idx := r.GetIndex(id)
-
 	for i := 0; i < r.k; i++ {
+		if i != 0 {
+			id = ZERO_ID
+		}
 		slice := r.slices[slice_idx]
-
 		n = slice.successorOf(id)
 		if n != nil {
-			break
+			return
 		}
-		slice_idx = r.forward(slice_idx)
-		// Reset to 0 for loop back
-		id = ZERO_ID
+		slice_idx = (slice_idx + 1) % r.k
 	}
-
 	return
 }
 

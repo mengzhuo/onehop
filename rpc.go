@@ -90,7 +90,7 @@ func (s *Service) GetID(key string) *Item {
 		if s.RPCError(err, node) {
 			continue
 		}
-		glog.V(1).Infof("Get %x From:%s", key, node.Addr)
+		glog.V(1).Infof("Get %s From:%s", key, node.Addr)
 		if err == nil && reply != nil {
 			glog.V(1).Infof("Get reply %s", reply)
 			items = append(items, reply)
@@ -141,11 +141,12 @@ func (s *Service) PutID(key string, item *Item) (count int) {
 
 		if node.ID == s.id {
 			// it's ourself
-			var r *bool
-			s.DB.Put(&PutArgs{key, item}, r)
+			if s.DB.put(key, item) {
+				count += 1
+			}
 			continue
 		}
-		glog.V(1).Infof("Put %x to %s", key, node.Addr.String())
+		glog.V(1).Infof("Put %s to %s", key, node.Addr.String())
 
 		client, err := s.RPCPool.Get(node.Addr.String())
 		if s.RPCError(err, node) {

@@ -56,7 +56,7 @@ func TestRouteAdd(t *testing.T) {
 	r := NewRoute(4)
 	for i := 0; i < 256; i += 15 {
 		id := fmt.Sprintf("%02x", []byte{byte(i)}) + FULL_ID[2:]
-		r.Add(&Node{id, nil, time.Now()})
+		r.Add(&Node{id, nil, time.Now().Unix(), nil})
 	}
 
 	if r.Len() != 18 {
@@ -71,7 +71,7 @@ func TestRouteAdd(t *testing.T) {
 	r = NewRoute(17)
 	for i := 0; i < 256; i += 2 {
 		id := fmt.Sprintf("%02x", []byte{byte(i)}) + FULL_ID[2:]
-		r.Add(&Node{id, nil, time.Now()})
+		r.Add(&Node{id, nil, time.Now().Unix(), nil})
 	}
 	if r.Len() != 128 {
 		for _, slice := range r.slices {
@@ -88,7 +88,7 @@ func TestRouteDelete(t *testing.T) {
 	r := NewRoute(4)
 	for i := 0; i < 256; i += 15 {
 		id := fmt.Sprintf("%02x", []byte{byte(i)}) + FULL_ID[2:]
-		r.Add(&Node{id, nil, time.Now()})
+		r.Add(&Node{id, nil, time.Now().Unix(), nil})
 	}
 	r.Delete("f0ffffffffffffffffffffffffffffff")
 	if r.Len() != 17 {
@@ -97,6 +97,36 @@ func TestRouteDelete(t *testing.T) {
 			for _, n := range slice.Nodes {
 				t.Error("|- " + n.String())
 			}
+		}
+	}
+}
+
+func TestRouteSuccessorOf(t *testing.T) {
+	/*
+		r := NewRoute(4)
+		for i := 0; i < 256; i += 15 {
+			id := fmt.Sprintf("%02x", []byte{byte(i)}) + FULL_ID[2:]
+			r.Add(&Node{id, nil, time.Now().Unix(), nil})
+		}
+		n := r.SuccessorOf("f0ffffffffffffffffffffffffffffff")
+		if n == nil {
+			t.Error(n, "not found")
+		}
+		n = r.SuccessorOf(FULL_ID)
+		if n == nil {
+			t.Error(n, "not found")
+		}
+	*/
+	r := NewRoute(7)
+	for i := 0; i < 20; i += 15 {
+		id := fmt.Sprintf("%02x", []byte{byte(i)}) + FULL_ID[2:]
+		r.Add(&Node{id, nil, time.Now().Unix(), nil})
+	}
+	n := r.SuccessorOf("fffffffffffffffffffffffffffffffe")
+	if n == nil || n.ID != "00ffffffffffffffffffffffffffffff" {
+		t.Error("expecting 00ffffffffffffffffffffffffffffff\nbut found...........", n.ID)
+		for _, n := range r.slices[0].Nodes {
+			t.Log(n.ID)
 		}
 	}
 }
