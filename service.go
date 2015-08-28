@@ -34,6 +34,7 @@ type Service struct {
 
 	RPCPool *RPCPool
 	DB      *Storage
+	Booted  chan bool
 }
 
 func NewUDPDecoder(buf *bytes.Buffer) *json.Decoder {
@@ -44,7 +45,7 @@ func NewUDPDecoder(buf *bytes.Buffer) *json.Decoder {
 // k for OneHop slice number
 func NewService(netType, address string, k, w, r int) *Service {
 
-	glog.Infof("Write:%d, Read:%d", k, r)
+	glog.Info("Starting OneHop K/V service")
 	listener, err := newListener(netType, address)
 	if err != nil {
 		panic(err)
@@ -52,21 +53,15 @@ func NewService(netType, address string, k, w, r int) *Service {
 	if err != nil {
 		panic(err)
 	}
-	glog.Infof("Listening to :%s %s", netType, address)
-
+	glog.Infof("Listening on:%s %s", netType, address)
+	glog.Infof("Config Write:%d, Read:%d", k, r)
 	route = NewRoute(k)
 	vid := make([]byte, 16)
 	rand.Read(vid)
 	id := hex.EncodeToString(vid)
 
-	n := &Node{id,
-		listener.LocalAddr().(*net.UDPAddr),
-		time.Now().Unix(),
-		&sync.Mutex{}}
-	route.Add(n)
-
 	slice := route.slices[route.GetIndex(id)]
-	glog.V(1).Info("Self Slice:", slice.Max)
+	glog.Infof("Node ID:%s", id)
 
 	service = &Service{
 		listener, route,
@@ -80,6 +75,7 @@ func NewService(netType, address string, k, w, r int) *Service {
 		NewLeakyBuffer(1024, MSG_MAX_SIZE),
 		NewRPCPool(),
 		NewStorage(),
+		make(chan bool),
 	}
 
 	if err = rpc.Register(service.DB); err != nil {
@@ -91,28 +87,72 @@ func NewService(netType, address string, k, w, r int) *Service {
 		go rpc.Accept(rpc_listener)
 	}
 
-	glog.V(3).Infof("RPC Listener Accepted")
+	glog.V(3).Infof("RPC ..... [on]")
 
-	go service.Start()
 	ALIVE_EVENT = &Event{id, JOIN, listener.LocalAddr().(*net.UDPAddr)}
 	return service
 }
 
-func (s *Service) BootStrapFrom(address string) {
+func (s *Service) BootStrap(address string) {
 
-	glog.Infof("BootStrap From :%s", address)
+	glog.Infof("BootStrap From ..... %s", address)
 	addr, _ := net.ResolveUDPAddr("udp", address)
 	msg := new(Msg)
 	msg.Type = BOOTSTRAP
 	msg.From = s.id
 	s.SendMsg(addr, msg)
+
+}
+
+func (s *Service) Replicate() {
+
+	id := s.id
+	<-s.Booted
+	glog.Infof("Start replication")
+	for i := 0; i < s.R; i++ {
+		data := make(map[string]*Item, 0)
+		node := s.route.SuccessorOf(id)
+		if node == nil || node.ID == s.id {
+			break
+		}
+		c, err := s.RPCPool.Get(node.Addr.String())
+		if err != nil {
+			glog.Error(err)
+			s.RPCError(err, node)
+		}
+		c.Call("Storage.Replicate", s.id, &data)
+		glog.Infof("Get %d items from Node:%s", len(data), node.ID)
+		for k, v := range data {
+			s.DB.mu.Lock()
+			s.DB.db[k] = v
+			s.DB.mu.Unlock()
+		}
+		id = node.ID
+	}
+}
+
+func (s *Service) BootStrapAndServe(address string) {
+
+	go s.listen()
+	s.addSelfNode()
+	glog.Infof("Serve Mode: BootStraped")
+	s.BootStrap(address)
+	go s.Replicate()
+	s.startRouteChecker()
+}
+
+func (s *Service) StandaloneServe() {
+	go s.listen()
+	s.addSelfNode()
+	glog.Infof("Serve Mode: Stand Alone")
+	s.startRouteChecker()
 }
 
 func BytesToId(p []byte) string {
 	return fmt.Sprintf("%032x", p)
 }
 
-func (s *Service) Listen() {
+func (s *Service) listen() {
 
 	for {
 
@@ -190,9 +230,19 @@ func (s *Service) SendMsg(dstAddr *net.UDPAddr, msg *Msg) {
 	}
 }
 
-func (s *Service) Start() {
+func (s *Service) addSelfNode() {
 
-	glog.Info("Checker on")
+	n := &Node{s.id,
+		s.conn.LocalAddr().(*net.UDPAddr),
+		time.Now().Unix(),
+		&sync.Mutex{}}
+	route.Add(n)
+}
+
+func (s *Service) startRouteChecker() {
+
+	glog.Info("Route checker....[on]")
+
 	for {
 		time.Sleep(1 * time.Second)
 		s.check()

@@ -105,7 +105,7 @@ func NewRoute(k int) *Route {
 		panic("K  can't not less than 2")
 	}
 	div := int(math.Ceil(math.Log2(float64(k))/8)) * 2
-	glog.Infof("starting route k=%d", k)
+	glog.Infof("Starting Route with K=%d", k)
 	block := new(big.Int)
 	block.SetBytes(FullID)
 

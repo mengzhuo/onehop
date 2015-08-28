@@ -1,6 +1,7 @@
 package onehop
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/rpc"
@@ -160,6 +161,29 @@ func (s *Service) PutID(key string, item *Item) (count int) {
 			count += 1
 		}
 	}
+	return
+}
+
+func (s *Service) GetJSON(key string, r interface{}) (ver int, err error) {
+
+	item := s.Get(key)
+	if item == nil {
+		return 0, fmt.Errorf("Key not existed")
+	}
+	err = json.Unmarshal(item.Data, r)
+	if err != nil {
+		return 0, fmt.Errorf("unmarshal error:%s", err)
+	}
+	return int(item.Ver), nil
+}
+
+func (s *Service) PutJSON(key string, version int, obj interface{}) (count int, err error) {
+
+	p, err := json.Marshal(obj)
+	if err != nil {
+		return 0, err
+	}
+	count = s.Put(key, &Item{uint64(version), p})
 	return
 }
 

@@ -75,7 +75,7 @@ func (s *Storage) Put(args *PutArgs, reply *bool) (err error) {
 
 	if ditem.Ver >= args.Item.Ver {
 		*reply = false
-		err = fmt.Errorf("Invaild put request %x %s", args.Key, args.Item)
+		err = fmt.Errorf("Invaild put request %s %s", args.Key, args.Item)
 		glog.Error(err)
 		return err
 	}

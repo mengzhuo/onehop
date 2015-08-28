@@ -112,6 +112,12 @@ func (s *Service) passOn(msg *Msg) {
 
 func (s *Service) OnBootstrapResponse(raddr *net.UDPAddr, msg *Msg) {
 	s.handleEvents(raddr, msg)
+	select {
+	case s.Booted <- true:
+		glog.Info("BootStrap Complete")
+	default:
+
+	}
 }
 
 func (s *Service) OnKeepAlive(raddr *net.UDPAddr, msg *Msg) {

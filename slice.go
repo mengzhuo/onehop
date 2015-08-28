@@ -3,8 +3,6 @@ package onehop
 import (
 	"sort"
 	"sync"
-
-	"github.com/golang/glog"
 )
 
 func NewSlice(min, max string) *Slice {
@@ -99,7 +97,6 @@ func (s *Slice) Delete(id string) bool {
 		s.Lock()
 		s.Nodes = append(s.Nodes[:i], s.Nodes[i+1:]...)
 		s.Unlock()
-		glog.Infof("slice %s Delete %s", s.Max, id)
 		return true
 	}
 	return false
@@ -112,7 +109,6 @@ func (s *Slice) Add(n *Node) bool {
 	}
 
 	if node := s.Get(n.ID); node == nil {
-		glog.Infof("Slice %s add %s", s.Max, n.ID)
 		s.Lock()
 		s.Nodes = append(s.Nodes, n)
 		sort.Sort(s.Nodes)
