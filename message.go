@@ -6,8 +6,9 @@ import (
 )
 
 const (
-	MSG_MAX_SIZE  = 8192
-	HEADER_LENGTH = 4
+	MSG_MAX_SIZE      = 8192
+	MAX_EVENT_PER_MSG = MSG_MAX_SIZE / 310
+	HEADER_LENGTH     = 4
 )
 
 // Message Type

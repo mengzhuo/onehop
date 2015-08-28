@@ -153,13 +153,41 @@ func (s *Service) Send(dstAddr *net.UDPAddr, p []byte) {
 
 func (s *Service) SendMsg(dstAddr *net.UDPAddr, msg *Msg) {
 
-	p, err := json.Marshal(msg)
-	if err != nil {
-		glog.Error(err)
+	if len(msg.Events) <= MAX_EVENT_PER_MSG {
+		p, err := json.Marshal(msg)
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+		glog.V(10).Infof("SEND %s with %x", dstAddr, p)
+		s.Send(dstAddr, p)
 		return
 	}
-	glog.V(10).Infof("SEND %s with %x", dstAddr, p)
-	s.Send(dstAddr, p)
+
+	events := msg.Events[:]
+
+	for i := 0; len(events) > 0; i++ {
+
+		if len(events) < MAX_EVENT_PER_MSG {
+			msg.Events = events[:]
+		} else {
+			msg.Events = events[:MAX_EVENT_PER_MSG]
+		}
+
+		p, err := json.Marshal(msg)
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+		glog.V(10).Infof("SEND splited %s with %x", dstAddr, p)
+		s.Send(dstAddr, p)
+
+		if len(events) < MAX_EVENT_PER_MSG {
+			events = events[:0]
+		} else {
+			events = events[MAX_EVENT_PER_MSG:]
+		}
+	}
 }
 
 func (s *Service) Start() {
