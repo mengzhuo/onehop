@@ -341,7 +341,7 @@ func (s *Service) check() {
 		s.exchange()
 		s.keepOtherAlive()
 
-	} else {
+	} else if now%3 == 0 {
 		msg := new(Msg)
 		msg.Type = EVENT_NOTIFICATION
 		msg.From = s.id
