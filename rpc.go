@@ -1,6 +1,7 @@
 package onehop
 
 import (
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -10,6 +11,11 @@ import (
 	"github.com/golang/glog"
 	"github.com/mengzhuo/murmur3"
 )
+
+func init() {
+	gob.Register(&Item{})
+	gob.Register(&PutArgs{})
+}
 
 func NewRPCPool() *RPCPool {
 	d := murmur3.New128()
